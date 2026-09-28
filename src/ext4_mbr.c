@@ -47,6 +47,9 @@
 
 #define MBR_SIGNATURE 0xAA55
 
+/*Sectors per track of the CHS geometry used by ext4_mbr_write*/
+#define MBR_SECTORS 63
+
 #pragma pack(push, 1)
 
 struct ext4_part_entry {
@@ -127,10 +130,30 @@ int ext4_mbr_scan(struct ext4_blockdev *parent, struct ext4_mbr_bdevs *bdevs)
 	return r;
 }
 
+/**@brief Encode an LBA as a 3 byte CHS address (head, sector | cylinder
+ *        bits 8-9, cylinder bits 0-7). Addresses beyond the CHS range are
+ *        clamped to the conventional 1023/254/63 maximum.*/
+static void ext4_mbr_lba_to_chs(uint8_t chs[3], uint32_t lba, uint32_t heads)
+{
+	uint32_t c = lba / (heads * MBR_SECTORS);
+	uint32_t h = (lba / MBR_SECTORS) % heads;
+	uint32_t s = lba % MBR_SECTORS + 1;
+
+	if (c > 1023) {
+		c = 1023;
+		h = 254;
+		s = 63;
+	}
+
+	chs[0] = h;
+	chs[1] = ((c >> 2) & 0xC0) | s;
+	chs[2] = c & 0xFF;
+}
+
 int ext4_mbr_write(struct ext4_blockdev *parent, struct ext4_mbr_parts *parts, uint32_t disk_id)
 {
 	int r;
-	uint64_t disk_size;
+	uint64_t disk_size, disk_sectors;
 	uint32_t division_sum = parts->division[0] + parts->division[1] +
 				parts->division[2] + parts->division[3];
 
@@ -143,17 +166,21 @@ int ext4_mbr_write(struct ext4_blockdev *parent, struct ext4_mbr_parts *parts, u
 		return r;
 
 	disk_size = parent->part_size;
+	disk_sectors = disk_size / parent->bdif->ph_bsize;
 
-	/*Calculate CHS*/
+	/*Calculate CHS geometry: 63 sectors per track and the smallest
+	 * number of heads (16, 32, 64, 128 or 255) that keeps the cylinder
+	 * count within 1024.*/
 	uint32_t k = 16;
-	while ((k < 256) && ((disk_size / k / 63) > 1024))
+	while ((k < 256) && ((disk_sectors / k / MBR_SECTORS) > 1024))
 		k *= 2;
 
 	if (k == 256)
 		--k;
 
-	const uint32_t cyl_size = 63 * k;
-	const uint32_t cyl_count = disk_size / cyl_size;
+	/*Cylinder size in sectors*/
+	const uint32_t cyl_size = MBR_SECTORS * k;
+	const uint32_t cyl_count = disk_sectors / cyl_size;
 
 	struct ext4_mbr *mbr = (void *)parent->bdif->ph_bbuf;
 	memset(mbr, 0, sizeof(struct ext4_mbr));
@@ -169,24 +196,20 @@ int ext4_mbr_write(struct ext4_blockdev *parent, struct ext4_mbr_parts *parts, u
 		uint32_t part_start = cyl_it * cyl_size;
 		uint32_t part_size = cyl_part * cyl_size;
 
-		if (i == 0) {
-			part_start += 63;
-			part_size -= 63 * parent->bdif->ph_bsize;
+		/*The first track of the disk holds the MBR*/
+		if (cyl_it == 0) {
+			part_start += MBR_SECTORS;
+			part_size -= MBR_SECTORS;
 		}
 
-		uint32_t cyl_end = cyl_part + cyl_it - 1;
-
 		mbr->part_entry[i].status = 0;
-		mbr->part_entry[i].chs1[0] = i ? 0 : 1;;
-		mbr->part_entry[i].chs1[1] = (cyl_it >> 2) + 1;
-		mbr->part_entry[i].chs1[2] = cyl_it;
 		mbr->part_entry[i].type = 0x83;
-		mbr->part_entry[i].chs2[0] = k - 1;
-		mbr->part_entry[i].chs2[1] = (cyl_end >> 2) + 63;
-		mbr->part_entry[i].chs2[2] = cyl_end;
+		ext4_mbr_lba_to_chs(mbr->part_entry[i].chs1, part_start, k);
+		ext4_mbr_lba_to_chs(mbr->part_entry[i].chs2,
+				    part_start + part_size - 1, k);
 
 		mbr->part_entry[i].first_lba = part_start;
-		mbr->part_entry[i].sectors = part_size / parent->bdif->ph_bsize;
+		mbr->part_entry[i].sectors = part_size;
 
 		cyl_it += cyl_part;
 	}
