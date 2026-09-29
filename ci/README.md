@@ -35,3 +35,13 @@ ci/run.sh --shell <env>   # interactive shell in an environment
 
 GitHub Actions workflows call `ci/run.sh <job>` and nothing else, so CI and
 local runs are identical.
+
+## Running on a shared machine
+
+Outside CI (`CI` unset), `ci/run.sh` starts containers with the lowest CPU
+weight (`--cpu-shares 2`, cgroup `cpu.weight` 1) and I/O weight, and runs the
+job under `nice -n 19` inside the container. Several jobs can run at once
+and still only use capacity other work leaves idle. Running `nice` on the
+host has no effect on containers, whose processes are started by the
+docker daemon. Set `CI_PRIORITY=normal` to run at normal priority, and
+`CI_JOBS=<n>` to cap build parallelism.
