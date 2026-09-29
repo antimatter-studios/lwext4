@@ -46,6 +46,7 @@ fix/fs-test-mk-rootless                   # #137 make test/test_all without root
 fix/xattr-disabled-build                  # #138 build without ext4_xattr.c (fork #20)
 fix/shared-lib-size                       # #139 lib_size with LWEXT4_BUILD_SHARED_LIB (fork #21)
 tests/readme-acceptance                   # #140 README acceptance tests (fork #22, on #116, carries #105 #110 #123 #130-#139)
+tests/readme-acceptance-integrated        # fork only: README acceptance of the integrated README (#119 #125 #126 #128 #129 on #140)
 fix/xattr-list-alignment                  # #141 align ext4_xattr_list entries (fork #23)
 fix/xattr-empty-value-offset              # #142 keep the zero offset of empty xattr values (fork #24)
 fix/removexattr-unlock                    # #143 unlock the mount point on ENOENT (fork #25)
