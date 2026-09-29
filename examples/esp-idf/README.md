@@ -305,5 +305,6 @@ lwext4's core. Two lwext4 source files are GPLv2: `src/ext4_extent.c` and
 `src/ext4_xattr.c`. They are compiled in when extents
 (`CONFIG_LWEXT4_EXTENTS`, needed for ext4 images made by `mke2fs -t ext4`)
 or extended attributes (`CONFIG_LWEXT4_XATTR`) are enabled, which is the
-default; your firmware then contains GPLv2 code. Disable both in menuconfig
-to build a BSD-only binary (and use ext2/ext3 or ext4 without extents).
+default; your firmware then contains GPLv2 code. Disabling both in
+menuconfig leaves the two files out of the build (you then need ext2/ext3,
+or ext4 without extents); that configuration is not exercised by CI yet.
