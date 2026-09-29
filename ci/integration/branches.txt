@@ -35,6 +35,15 @@ hw/renode-boards                          # bare-metal SD card example on STM32/
 feature/library-packaging                 # #125 libblockdev, lwext4.pc, CMake package (fork #2, on #119)
 docs/examples                             # #126 examples and getting started (fork #3)
 feature/macos                             # #127 macOS: file_dev disk devices, CI job (fork #4)
-# Pending, add when ready:
-# tests/readme-acceptance
+fix/xattr-remove-ibody                    # #130 in-inode xattr removal used an uninitialised search context (fork #12)
+fix/symlink-slow-zero-pad                 # #131 zero pad slow symlink blocks (fork #13)
+fix/dir-mv-dotdot-csum                    # #132 directory block checksum when ".." changes (fork #14)
+fix/htree-two-levels                      # #133 two level htrees on metadata_csum (fork #15)
+fix/unlink-single-transaction             # #134 unlink/rmdir in one journal transaction (fork #16)
+fix/ondisk-byte-order                     # #135 byte order/width of on-disk fields, uid/gid (fork #17)
+fix/fs-test-tools-options                 # #136 fs_test tools: --help, mkfs -e 2, --verbose (fork #18)
+fix/fs-test-mk-rootless                   # #137 make test/test_all without root (fork #19)
+fix/xattr-disabled-build                  # #138 build without ext4_xattr.c (fork #20)
+fix/shared-lib-size                       # #139 lib_size with LWEXT4_BUILD_SHARED_LIB (fork #21)
+tests/readme-acceptance                   # #140 README acceptance tests (fork #22, on #116, carries #105 #110 #123 #130-#139)
 am/release                                # fork only: integration/release pipeline, fork README
