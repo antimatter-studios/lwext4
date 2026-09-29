@@ -139,9 +139,27 @@ def boot(args, n):
             verdict = f"FAIL: QEMU exited ({proc.returncode}) without a verdict"
     if not verdict.startswith("PASS"):
         fail(f"boot {n}: {verdict}")
+        decode_panic(args, "".join(console) + (rest or ""))
         return None
     log(f"boot {n}: {verdict} ({elapsed:.0f} s)")
     return "".join(console)
+
+
+def decode_panic(args, text):
+    """Print a panic's register dump and backtrace with source locations,
+    like idf.py monitor does on a real board."""
+    i = text.find("Guru Meditation")
+    if i < 0:
+        return
+    dump = text[i : i + 4000].split("Rebooting...")[0]
+    print(dump)
+    addrs = re.findall(r"\b(?:PC|MEPC|RA)\s*:\s*(0x[0-9a-f]{8})", dump)
+    for bt in re.findall(r"Backtrace:(.*)", dump):
+        addrs += re.findall(r"(0x[0-9a-f]{8}):0x[0-9a-f]{8}", bt)
+    tool = "riscv32-esp-elf-addr2line" if args.target in ("esp32c3",) else "xtensa-esp-elf-addr2line"
+    if addrs and shutil.which(tool):
+        r = run([tool, "-pfiaC", "-e", args.elf] + addrs)
+        print("Decoded:\n" + r.stdout)
 
 
 # ------------------------------------------------------------ disk images
@@ -342,7 +360,11 @@ def main():
     os.makedirs(args.work)
 
     with open(os.path.join(args.build_dir, "project_description.json")) as f:
-        target = json.load(f)["target"]
+        desc = json.load(f)
+    target = args.target = desc["target"]
+    # Keep the ELF with the logs: it is what decodes a panic backtrace.
+    args.elf = os.path.join(args.work, os.path.basename(desc["app_elf"]))
+    shutil.copyfile(os.path.join(args.build_dir, desc["app_elf"]), args.elf)
     use_sd = bool(sdkconfig_value(args.build_dir, "EXAMPLE_SD_SDMMC"))
     log(f"target {target}, SD card on SDMMC: {'yes' if use_sd else 'no'}")
 
