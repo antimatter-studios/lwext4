@@ -82,6 +82,7 @@ run_in()
 		-v "$root":/src -w /src \
 		-u "$(id -u):$(id -g)" -e HOME=/tmp \
 		-e CI="${CI:-}" -e GITHUB_ACTIONS="${GITHUB_ACTIONS:-}" \
+		-e CI_JOBS="${CI_JOBS:-}" \
 		"$tag" "$@"
 }
 
