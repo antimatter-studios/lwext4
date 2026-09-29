@@ -56,5 +56,6 @@ fix/fremove-directory                     # #147 ext4_fremove of a directory: EI
 fix/dir-rm-hard-links                     # #148 ext4_dir_rm keeps files with other names (fork #30)
 fix/truncate-indirect-blocks              # #149 truncate releases indirect blocks (fork #31)
 fix/fwrite-error-code                     # #150 ext4_fwrite returns ENOSPC (fork #32)
+fix/xattr-block-csum-byte-order           # #152 byte order of the xattr block checksum (fork #34)
 tests/coverage                            # #151 coverage CI job and tests (fork #33, closes fork #5)
 am/release                                # fork only: integration/release pipeline, fork README
