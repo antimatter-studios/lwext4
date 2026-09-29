@@ -221,8 +221,11 @@ Lwext4 could be compiled for many targets. Here are an examples for 8/16/32/64 b
 
 Library has been tested only for generic (amd64) & ARM Cortex M architectures.
 For other targets compilation passes (with warnings somewhere) but tests are
-not done yet. Lwext4 code is written with endianes respect. Big endian
-behavior also hasn't been tested yet.
+not done yet. Lwext4 code is written with endianes respect. The byte order
+is taken from the compiler (`__BYTE_ORDER__`, or the usual per architecture
+macros such as `__ARMEB__`/`_MIPSEB`). `CONFIG_BIG_ENDIAN` (1 or 0) overrides
+it for compilers that define none of them; a value that contradicts the
+compiler is a build error.
 
 Build avrxmega7 library:
 ------------
