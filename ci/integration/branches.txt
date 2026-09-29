@@ -29,6 +29,9 @@ fix/mkfs-read-info-label                  # not yet submitted (part of the found
 fix/dx-init-leaf-csum                     # not yet submitted
 fix/block-size-below-sector               # not yet submitted
 hw/esp32-qemu-rebased                     # ESP-IDF port + QEMU CI (hw/esp32-qemu on the rebuilt ci/qemu-matrix)
+feature/library-packaging                 # #125 libblockdev, lwext4.pc, CMake package (fork #2, on #119)
+docs/examples                             # #126 examples and getting started (fork #3)
+feature/macos                             # #127 macOS: file_dev disk devices, CI job (fork #4)
 # Pending, add when ready:
 # tests/readme-acceptance
 # hw/renode-boards
