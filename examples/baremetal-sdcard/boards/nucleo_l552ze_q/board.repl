@@ -1,0 +1,7 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// ST NUCLEO-L552ZE-Q. Renode's STM32L552 description already has the real
+// memory sizes (512 KiB flash, 192 + 64 KiB SRAM).
+using "platforms/cpus/stm32l552.repl"
+
+cpu:
+    InitVectorTableOffset: 0x08000000
