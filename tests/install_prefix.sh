@@ -17,7 +17,8 @@ mkdir -p "$work"
 status=0
 for f in bin/lwext4-generic bin/lwext4-mkfs lib/liblwext4.a \
 	 include/lwext4/ext4.h; do
-	if [ ! -f "$work/prefix/$f" ]; then
+	# Windows builds install bin/<tool>.exe
+	if [ ! -f "$work/prefix/$f" ] && [ ! -f "$work/prefix/$f.exe" ]; then
 		echo "missing: $work/prefix/$f"
 		status=1
 	fi
