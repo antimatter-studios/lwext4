@@ -6,7 +6,14 @@
 #   ci/run.sh --shell <env>     interactive shell in an environment
 #
 # Layout:
-#   ci/envs/<env>/Dockerfile    one image per toolchain/emulator environment
+#   ci/envs/<env>/Dockerfile    one image per toolchain/emulator environment.
+#                               It may build on another environment with
+#                                 # base: <env>
+#                                 ARG BASE
+#                                 FROM ${BASE}
+#                               ci/run.sh builds the base first and passes its
+#                               tag as BASE, so layers are shared, not copied.
+#   ci/envs/<env>/README.md     what the environment contains and why
 #   ci/jobs/<job>.sh            job script, run inside the container from the
 #                               repository root; its header selects the image:
 #                                 # env: <env>
@@ -30,11 +37,19 @@ header()
 	sed -n "s/^# $1: *//p" "$2" | head -n 1
 }
 
+env_base()
+{
+	header base "$root/ci/envs/$1/Dockerfile"
+}
+
 image_tag()
 {
-	# Rebuild whenever anything in the environment directory changes
-	hash=$(cd "$root/ci/envs/$1" && find . -type f | LC_ALL=C sort |
-		xargs cat | sha256sum | cut -c1-16)
+	# Rebuild whenever anything in the environment directory (or in any
+	# environment it builds on) changes
+	base=$(env_base "$1")
+	hash=$( (cd "$root/ci/envs/$1" && find . -type f | LC_ALL=C sort |
+		xargs cat; [ -z "$base" ] || image_tag "$base") |
+		sha256sum | cut -c1-16)
 	echo "lwext4-ci-$1:$hash"
 }
 
@@ -43,10 +58,14 @@ build_image()
 	env=$1
 	platform=$2
 	[ -f "$root/ci/envs/$env/Dockerfile" ] || die "unknown environment '$env'"
+	base=$(env_base "$env")
+	base_tag=
+	[ -z "$base" ] || base_tag=$(build_image "$base" "$platform")
 	tag=$(image_tag "$env")
 	if ! docker image inspect "$tag" >/dev/null 2>&1; then
 		echo "ci/run.sh: building $tag" >&2
-		docker build ${platform:+--platform "$platform"} -t "$tag" \
+		docker build ${platform:+--platform "$platform"} \
+			${base_tag:+--build-arg BASE="$base_tag"} -t "$tag" \
 			"$root/ci/envs/$env" >&2
 	fi
 	echo "$tag"
@@ -72,7 +91,13 @@ command -v docker >/dev/null 2>&1 || die "docker is required"
 case "$1" in
 --list)
 	for f in "$root"/ci/jobs/*.sh; do
-		printf '%-32s %s\n' "$(basename "$f" .sh)" "$(header env "$f")"
+		env=$(header env "$f")
+		chain=$env
+		while base=$(env_base "$env") && [ -n "$base" ]; do
+			chain="$chain <- $base"
+			env=$base
+		done
+		printf '%-32s %s\n' "$(basename "$f" .sh)" "$chain"
 	done
 	;;
 --shell)
