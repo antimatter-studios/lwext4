@@ -92,8 +92,37 @@ jobs:
           path: build-ci/dist/
           if-no-files-found: error
 
+  # Bare-metal SD card example firmware (examples/baremetal-sdcard): built
+  # and tested in Renode per board, flashable images per board.
+  package-baremetal-sdcard:
+    name: package / baremetal-sdcard ${{ matrix.board }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        board: [nucleo_f401re, nucleo_g071rb, nucleo_l552ze_q, nrf52840dk]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - run: ci/run.sh baremetal-sdcard-build ${{ matrix.board }}
+      - run: ci/run.sh renode-baremetal-sdcard ${{ matrix.board }}
+      - name: Package flashable images
+        run: |
+          name="lwext4-$(git describe --tags --always | sed 's/^v//')-baremetal-sdcard-${{ matrix.board }}"
+          mkdir -p build-ci/dist "build-ci/pkg/$name"
+          cp -a "examples/baremetal-sdcard/dist/${{ matrix.board }}/." "build-ci/pkg/$name/"
+          cp LICENSE "build-ci/pkg/$name/"
+          tar -C build-ci/pkg -czf "build-ci/dist/$name.tar.gz" "$name"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist-baremetal-sdcard-${{ matrix.board }}
+          path: build-ci/dist/
+          if-no-files-found: error
+
   publish:
-    needs: [ci, package-linux, package, package-esp32]
+    needs: [ci, package-linux, package, package-esp32, package-baremetal-sdcard]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
