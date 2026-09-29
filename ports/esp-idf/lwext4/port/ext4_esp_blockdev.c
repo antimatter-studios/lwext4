@@ -114,8 +114,10 @@ static int sd_bwrite(struct ext4_blockdev *bdev, const void *buf,
  * into the data address space (esp_partition_mmap) and copied from. This
  * avoids esp_partition_read(), which disables the caches (and stalls the
  * other core) for every chunk it moves through the SPI registers.
- * Flash writes and erases invalidate the cache for the affected range, so
- * the mapping never returns stale data.
+ *
+ * The window is dropped before the partition is erased or written inside
+ * it, so the next read maps the page again instead of relying on cache
+ * invalidation of a live mapping.
  */
 #define MMAP_WINDOW (64u * 1024u)
 
@@ -155,11 +157,27 @@ static esp_err_t part_read(ext4_esp_blockdev_t *dev, size_t off, void *buf,
 	}
 	return ESP_OK;
 }
+
+static void part_unmap(ext4_esp_blockdev_t *dev, size_t off, size_t len)
+{
+	if (dev->map_ptr && off < dev->map_off + dev->map_len &&
+	    off + len > dev->map_off) {
+		esp_partition_munmap(dev->map_handle);
+		dev->map_ptr = NULL;
+	}
+}
 #else
 static esp_err_t part_read(ext4_esp_blockdev_t *dev, size_t off, void *buf,
 			   size_t len)
 {
 	return esp_partition_read(dev->u.part, off, buf, len);
+}
+
+static void part_unmap(ext4_esp_blockdev_t *dev, size_t off, size_t len)
+{
+	(void)dev;
+	(void)off;
+	(void)len;
 }
 #endif
 
@@ -193,13 +211,15 @@ static int part_bwrite(struct ext4_blockdev *bdev, const void *buf,
 		const uint8_t *data = src + (size_t)i * PARTITION_SECTOR_SIZE;
 
 #if CONFIG_LWEXT4_PARTITION_SKIP_IDENTICAL
-		err = part_read(dev, off, dev->sector_buf,
-				PARTITION_SECTOR_SIZE);
+		/* Compare with what the flash chip really holds. */
+		err = esp_partition_read(dev->u.part, off, dev->sector_buf,
+					 PARTITION_SECTOR_SIZE);
 		if (err != ESP_OK)
 			break;
 		if (memcmp(dev->sector_buf, data, PARTITION_SECTOR_SIZE) == 0)
 			continue;
 #endif
+		part_unmap(dev, off, PARTITION_SECTOR_SIZE);
 		err = esp_partition_erase_range(dev->u.part, off,
 						PARTITION_SECTOR_SIZE);
 		if (err != ESP_OK)
