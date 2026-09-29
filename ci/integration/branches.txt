@@ -1,0 +1,35 @@
+# SPDX-License-Identifier: BSD-3-Clause
+#
+# Topic branches merged, in this order, on top of upstream master
+# (gkostka/lwext4) to build the `integration` branch; see rebuild.sh.
+# One branch per upstream pull request; `#` starts a comment.
+#
+# branch                                  upstream PR
+tests/harness                             # gkostka/lwext4#102 foundation: CTest harness, container CI, #117/#120/byte order/mkfs fixes
+fix/issue-101-fread-holes                 # #103
+fix/issue-73-mbr-chs                      # #104
+fix/issue-77-bmap-find-clr                # #105
+fix/issue-50-ialloc-loop                  # #106
+fix/issue-100-91-extent-header            # #107
+fix/issue-39-readlink-fast-symlink        # #108
+feature/issue-75-file-dev-partition       # #109
+fix/issue-72-mkfs-free-blocks             # #110
+fix/issue-90-92-93-superblock-geometry    # #111
+fix/issue-89-dir-entry-null               # #112
+fix/issue-68-journal-leak                 # #113
+fix/issue-86-jbd-stale-replay             # #114
+fix/issue-67-fwrite-large                 # #115
+ci/qemu-matrix                            # #116 full architecture matrix
+fix/big-endian-sb-csum-type               # #117 (also part of the foundation)
+fix/issue-57-bg-ref-leak                  # #118
+fix/issue-48-install-prefix               # #119
+fix/issue-42-mingw-inet-pton              # #120 (also part of the foundation)
+fix/byte-order-autodetect                 # not yet submitted (part of the foundation)
+fix/mkfs-read-info-label                  # not yet submitted (part of the foundation)
+fix/dx-init-leaf-csum                     # not yet submitted
+fix/block-size-below-sector               # not yet submitted
+hw/esp32-qemu-rebased                     # ESP-IDF port + QEMU CI (hw/esp32-qemu on the rebuilt ci/qemu-matrix)
+# Pending, add when ready:
+# tests/readme-acceptance
+# hw/renode-boards
+am/release                                # fork only: integration/release pipeline, fork README
