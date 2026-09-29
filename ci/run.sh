@@ -78,12 +78,22 @@ run_in()
 	shift 2
 	tty=
 	[ -t 0 ] && [ -t 1 ] && tty=-it
-	docker run --rm $tty ${platform:+--platform "$platform"} \
+	# Outside CI the host is usually shared: give the container the lowest
+	# CPU and I/O weight and run the job at the lowest nice level, so it
+	# only uses capacity nobody else wants. Host-side nice does not reach
+	# processes started by the docker daemon. CI_PRIORITY=normal opts out.
+	prio=
+	nice=
+	if [ -z "${CI:-}" ] && [ "${CI_PRIORITY:-low}" = low ]; then
+		prio="--cpu-shares 2 --blkio-weight 10"
+		nice="nice -n 19"
+	fi
+	docker run --rm $tty ${platform:+--platform "$platform"} $prio \
 		-v "$root":/src -w /src \
 		-u "$(id -u):$(id -g)" -e HOME=/tmp \
 		-e CI="${CI:-}" -e GITHUB_ACTIONS="${GITHUB_ACTIONS:-}" \
 		-e CI_JOBS="${CI_JOBS:-}" \
-		"$tag" "$@"
+		"$tag" $nice "$@"
 }
 
 command -v docker >/dev/null 2>&1 || die "docker is required"
