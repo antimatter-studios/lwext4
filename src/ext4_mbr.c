@@ -109,10 +109,12 @@ int ext4_mbr_scan(struct ext4_blockdev *parent, struct ext4_mbr_bdevs *bdevs)
 		ext4_dbg(DEBUG_MBR, "mbr_part: %d\n", (int)i);
 		ext4_dbg(DEBUG_MBR, "\tstatus: 0x%x\n", pe->status);
 		ext4_dbg(DEBUG_MBR, "\ttype 0x%x:\n", pe->type);
-		ext4_dbg(DEBUG_MBR, "\tfirst_lba: 0x%"PRIx32"\n", pe->first_lba);
-		ext4_dbg(DEBUG_MBR, "\tsectors: 0x%"PRIx32"\n", pe->sectors);
+		ext4_dbg(DEBUG_MBR, "\tfirst_lba: 0x%"PRIx32"\n",
+			 to_le32(pe->first_lba));
+		ext4_dbg(DEBUG_MBR, "\tsectors: 0x%"PRIx32"\n",
+			 to_le32(pe->sectors));
 
-		if (!pe->sectors)
+		if (!to_le32(pe->sectors))
 			continue; /*Empty entry*/
 
 		if (pe->type != 0x83)
@@ -120,9 +122,9 @@ int ext4_mbr_scan(struct ext4_blockdev *parent, struct ext4_mbr_bdevs *bdevs)
 
 		bdevs->partitions[i].bdif = parent->bdif;
 		bdevs->partitions[i].part_offset =
-			(uint64_t)pe->first_lba * parent->bdif->ph_bsize;
+			(uint64_t)to_le32(pe->first_lba) * parent->bdif->ph_bsize;
 		bdevs->partitions[i].part_size =
-			(uint64_t)pe->sectors * parent->bdif->ph_bsize;
+			(uint64_t)to_le32(pe->sectors) * parent->bdif->ph_bsize;
 	}
 
 	blockdev_fini:
@@ -185,7 +187,7 @@ int ext4_mbr_write(struct ext4_blockdev *parent, struct ext4_mbr_parts *parts, u
 	struct ext4_mbr *mbr = (void *)parent->bdif->ph_bbuf;
 	memset(mbr, 0, sizeof(struct ext4_mbr));
 
-	mbr->disk_id = disk_id;
+	mbr->disk_id = to_le32(disk_id);
 
 	uint32_t cyl_it = 0;
 	for (int i = 0; i < 4; ++i) {
@@ -208,13 +210,13 @@ int ext4_mbr_write(struct ext4_blockdev *parent, struct ext4_mbr_parts *parts, u
 		ext4_mbr_lba_to_chs(mbr->part_entry[i].chs2,
 				    part_start + part_size - 1, k);
 
-		mbr->part_entry[i].first_lba = part_start;
-		mbr->part_entry[i].sectors = part_size;
+		mbr->part_entry[i].first_lba = to_le32(part_start);
+		mbr->part_entry[i].sectors = to_le32(part_size);
 
 		cyl_it += cyl_part;
 	}
 
-	mbr->signature = MBR_SIGNATURE;
+	mbr->signature = to_le16(MBR_SIGNATURE);
 	r = ext4_block_writebytes(parent, 0, parent->bdif->ph_bbuf, 512);
 	if (r != EOK)
 		goto blockdev_fini;

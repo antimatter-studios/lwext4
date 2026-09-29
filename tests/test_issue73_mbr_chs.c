@@ -12,6 +12,9 @@
  * read back the same partitions.
  */
 
+/* The sparse images are larger than 2 GiB: 64-bit off_t on 32-bit hosts. */
+#define _FILE_OFFSET_BITS 64
+
 #include "test_util.h"
 
 #include "../blockdev/linux/file_dev.h"
