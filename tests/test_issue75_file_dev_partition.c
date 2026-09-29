@@ -138,15 +138,18 @@ static void test_mount_window(const char *image)
 static void test_out_of_range(const char *image)
 {
 	struct ext4_blockdev *bd = file_dev_get();
-	uint8_t blk[4096];
-	const uint64_t nblk = PART_SIZE / sizeof(blk);
+	/* Room for the two block request below: the device must reject it,
+	 * but the buffer still has to be valid for the length asked for. */
+	uint8_t blk[2 * 4096];
+	const uint32_t bsize = 4096;
+	const uint64_t nblk = PART_SIZE / bsize;
 
 	file_dev_name_set(image);
 
 	/* Direct I/O past the end of the window must fail. */
 	set_window(PAD_SIZE, PART_SIZE);
 	TEST_ASSERT_EQ(EOK, ext4_block_init(bd));
-	ext4_block_set_lb_size(bd, sizeof(blk));
+	ext4_block_set_lb_size(bd, bsize);
 	memset(blk, 0, sizeof(blk));
 	TEST_ASSERT_EQ(EOK, ext4_blocks_get_direct(bd, blk, nblk - 1, 1));
 	TEST_ASSERT(ext4_blocks_get_direct(bd, blk, nblk, 1) != EOK);
