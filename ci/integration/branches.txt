@@ -1,0 +1,62 @@
+# SPDX-License-Identifier: BSD-3-Clause
+#
+# Topic branches merged, in this order, on top of upstream master
+# (gkostka/lwext4) to build the `integration` branch; see rebuild.sh.
+# One branch per upstream pull request; `#` starts a comment.
+#
+# branch                                  upstream PR
+tests/harness                             # gkostka/lwext4#102 foundation: CTest harness, container CI, #117/#120/byte order/mkfs fixes
+fix/issue-101-fread-holes                 # #103
+fix/issue-73-mbr-chs                      # #104
+fix/issue-77-bmap-find-clr                # #105
+fix/issue-50-ialloc-loop                  # #106
+fix/issue-100-91-extent-header            # #107
+fix/issue-39-readlink-fast-symlink        # #108
+feature/issue-75-file-dev-partition       # #109
+fix/issue-72-mkfs-free-blocks             # #110
+fix/issue-90-92-93-superblock-geometry    # #111
+fix/issue-89-dir-entry-null               # #112
+fix/issue-68-journal-leak                 # #113
+fix/issue-86-jbd-stale-replay             # #114
+fix/issue-67-fwrite-large                 # #115
+ci/qemu-matrix                            # #116 full architecture matrix
+fix/big-endian-sb-csum-type               # #117 (also part of the foundation)
+fix/issue-57-bg-ref-leak                  # #118
+fix/issue-48-install-prefix               # #119
+fix/issue-42-mingw-inet-pton              # #120 (also part of the foundation)
+fix/byte-order-autodetect                 # not yet submitted (part of the foundation)
+fix/mkfs-read-info-label                  # not yet submitted (part of the foundation)
+fix/dx-init-leaf-csum                     # not yet submitted
+fix/block-size-below-sector               # not yet submitted
+fix/mbr-sector-size                       # #128 ext4_mbr on 4096/<512 byte sectors, disk signature offset (fork #11, on #104)
+feature/partition-tables                  # #129 GPT and logical MBR partitions (fork #1, #10)
+hw/esp32-qemu-rebased                     # ESP-IDF port + QEMU CI (hw/esp32-qemu on the rebuilt ci/qemu-matrix)
+hw/renode-boards                          # bare-metal SD card example on STM32/nRF52 boards, Renode CI
+feature/library-packaging                 # #125 libblockdev, lwext4.pc, CMake package (fork #2, on #119)
+docs/examples                             # #126 examples and getting started (fork #3)
+feature/macos                             # #127 macOS: file_dev disk devices, CI job (fork #4)
+fix/xattr-remove-ibody                    # #130 in-inode xattr removal used an uninitialised search context (fork #12)
+fix/symlink-slow-zero-pad                 # #131 zero pad slow symlink blocks (fork #13)
+fix/dir-mv-dotdot-csum                    # #132 directory block checksum when ".." changes (fork #14)
+fix/htree-two-levels                      # #133 two level htrees on metadata_csum (fork #15)
+fix/unlink-single-transaction             # #134 unlink/rmdir in one journal transaction (fork #16)
+fix/ondisk-byte-order                     # #135 byte order/width of on-disk fields, uid/gid (fork #17)
+fix/fs-test-tools-options                 # #136 fs_test tools: --help, mkfs -e 2, --verbose (fork #18)
+fix/fs-test-mk-rootless                   # #137 make test/test_all without root (fork #19)
+fix/xattr-disabled-build                  # #138 build without ext4_xattr.c (fork #20)
+fix/shared-lib-size                       # #139 lib_size with LWEXT4_BUILD_SHARED_LIB (fork #21)
+tests/readme-acceptance                   # #140 README acceptance tests (fork #22, on #116, carries #105 #110 #123 #130-#139)
+tests/readme-acceptance-integrated        # fork only: README acceptance of the integrated README (#104 #119 #125 #126 #128 #129 on #140)
+fix/xattr-list-alignment                  # #141 align ext4_xattr_list entries (fork #23)
+fix/xattr-empty-value-offset              # #142 keep the zero offset of empty xattr values (fork #24)
+fix/removexattr-unlock                    # #143 unlock the mount point on ENOENT (fork #25)
+fix/listxattr-no-attributes               # #144 listxattr size 0 without attributes (fork #26)
+fix/dx-dot-entries-lookup                 # #145 "." and ".." in indexed directories (fork #27)
+fix/dir-mv-into-subtree                   # #146 refuse moving a directory into its subtree (fork #28)
+fix/fremove-directory                     # #147 ext4_fremove of a directory: EISDIR (fork #29)
+fix/dir-rm-hard-links                     # #148 ext4_dir_rm keeps files with other names (fork #30)
+fix/truncate-indirect-blocks              # #149 truncate releases indirect blocks (fork #31)
+fix/fwrite-error-code                     # #150 ext4_fwrite returns ENOSPC (fork #32)
+fix/xattr-block-csum-byte-order           # #152 byte order of the xattr block checksum (fork #34)
+tests/coverage                            # #151 coverage CI job and tests (fork #33, closes fork #5)
+am/release                                # fork only: integration/release pipeline, fork README

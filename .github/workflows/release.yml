@@ -1,0 +1,154 @@
+# SPDX-License-Identifier: BSD-3-Clause
+#
+# Release of an `integration` build. Push a tag v<upstream next patch>-am.<n>
+# (e.g. v1.0.1-am.1, see README) on a commit of `integration`: the whole CI
+# matrix runs on the tag, the release packages are built (each one running
+# its own CTest suite), and only if every job passed is the GitHub release
+# published with the packages, JUnit test results, test report and manifest.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ github.ref }}
+
+  package-linux:
+    name: package / linux-${{ matrix.arch }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x86_64, aarch64, armhf, i686, riscv64, ppc64le, s390x, powerpc, mips]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - run: ci/run.sh package-linux ${{ matrix.arch }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist-linux-${{ matrix.arch }}
+          path: build-ci/dist/
+          if-no-files-found: error
+
+  package:
+    name: package / ${{ matrix.job }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        job: [package-mingw, package-cortex-m]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - run: ci/run.sh ${{ matrix.job }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist-${{ matrix.job }}
+          path: build-ci/dist/
+          if-no-files-found: error
+
+  # ESP-IDF example firmware (examples/esp-idf): the QEMU tested chips and
+  # the SD-over-SPI builds for real boards, flashable images per variant.
+  package-esp32:
+    name: package / esp-idf ${{ matrix.variant }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {variant: esp32, job: esp32-qemu, args: esp32}
+          - {variant: esp32c3, job: esp32-qemu, args: esp32c3}
+          - {variant: esp32s3, job: esp32-qemu, args: esp32s3}
+          - {variant: esp32-sdspi, job: esp32-build, args: esp32 sdspi}
+          - {variant: esp32c3-sdspi, job: esp32-build, args: esp32c3 sdspi}
+          - {variant: esp32s3-sdspi, job: esp32-build, args: esp32s3 sdspi}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - run: ci/run.sh ${{ matrix.job }} ${{ matrix.args }}
+      - name: Package flashable images
+        run: |
+          name="lwext4-$(git describe --tags --always | sed 's/^v//')-esp-idf-${{ matrix.variant }}"
+          mkdir -p build-ci/dist "build-ci/pkg/$name"
+          cp -a "examples/esp-idf/dist/${{ matrix.variant }}/." "build-ci/pkg/$name/"
+          cp LICENSE "build-ci/pkg/$name/"
+          tar -C build-ci/pkg -czf "build-ci/dist/$name.tar.gz" "$name"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist-esp-idf-${{ matrix.variant }}
+          path: build-ci/dist/
+          if-no-files-found: error
+
+  # Bare-metal SD card example firmware (examples/baremetal-sdcard): built
+  # and tested in Renode per board, flashable images per board.
+  package-baremetal-sdcard:
+    name: package / baremetal-sdcard ${{ matrix.board }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        board: [nucleo_f401re, nucleo_g071rb, nucleo_l552ze_q, nrf52840dk]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - run: ci/run.sh baremetal-sdcard-build ${{ matrix.board }}
+      - run: ci/run.sh renode-baremetal-sdcard ${{ matrix.board }}
+      - name: Package flashable images
+        run: |
+          name="lwext4-$(git describe --tags --always | sed 's/^v//')-baremetal-sdcard-${{ matrix.board }}"
+          mkdir -p build-ci/dist "build-ci/pkg/$name"
+          cp -a "examples/baremetal-sdcard/dist/${{ matrix.board }}/." "build-ci/pkg/$name/"
+          cp LICENSE "build-ci/pkg/$name/"
+          tar -C build-ci/pkg -czf "build-ci/dist/$name.tar.gz" "$name"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist-baremetal-sdcard-${{ matrix.board }}
+          path: build-ci/dist/
+          if-no-files-found: error
+
+  publish:
+    needs: [ci, package-linux, package, package-esp32, package-baremetal-sdcard]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: The tag must be on integration
+        run: |
+          git fetch origin integration
+          git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD
+      - uses: actions/download-artifact@v8
+        with:
+          path: build-ci/dist
+          pattern: dist-*
+          merge-multiple: true
+      - name: Manifest, test report, notes
+        run: |
+          python3 ci/integration/release-notes.py "$GITHUB_REF_NAME" build-ci/dist \
+            "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd build-ci/dist
+          gh release create "$GITHUB_REF_NAME" --verify-tag \
+            --title "lwext4 $GITHUB_REF_NAME" --notes-file RELEASE-NOTES.md \
+            *.tar.gz *.xml MANIFEST.md TEST-REPORT.md
