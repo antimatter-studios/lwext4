@@ -13,6 +13,7 @@ ARG TARGETS="\
 	arm-linux-gnueabihf:armhf \
 	aarch64-linux-gnu:arm64 \
 	i686-linux-gnu:i386 \
+	x86_64-linux-gnu:amd64 \
 	riscv64-linux-gnu:riscv64 \
 	powerpc64le-linux-gnu:ppc64el \
 	s390x-linux-gnu:s390x \
@@ -27,9 +28,14 @@ RUN set -eu; \
 		if [ "$arch" = "$native" ]; then \
 			pkgs="$pkgs gcc libc6-dev"; \
 		else \
-			pkgs="$pkgs gcc-$triple libc6-dev-$arch-cross"; \
+			pkgs="$pkgs gcc-$(echo $triple | tr _ -) libc6-dev-$arch-cross"; \
 		fi; \
 	done; \
 	apt-get update; \
 	apt-get install -y --no-install-recommends file qemu-user $pkgs; \
-	rm -rf /var/lib/apt/lists/*
+	rm -rf /var/lib/apt/lists/*; \
+	for t in $TARGETS; do \
+		triple=${t%%:*}; \
+		command -v $triple-gcc >/dev/null || \
+			ln -s "$(command -v gcc)" /usr/local/bin/$triple-gcc; \
+	done

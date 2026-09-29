@@ -7,6 +7,7 @@ Linux architecture in the CI matrix, and qemu-user to run the results:
 |---|---|---|
 | armhf | arm-linux-gnueabihf | 32-bit ARM, alignment sensitive |
 | aarch64 | aarch64-linux-gnu | 64-bit ARM |
+| x86_64 | x86_64-linux-gnu | release packages (and a cross build from arm64 hosts) |
 | i686 | i686-linux-gnu | 32-bit `long`/`size_t`, 4-byte aligned `uint64_t` |
 | riscv64 | riscv64-linux-gnu | another 64-bit RISC ABI |
 | ppc64le | powerpc64le-linux-gnu | 64-bit POWER, little endian |
