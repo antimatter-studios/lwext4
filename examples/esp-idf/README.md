@@ -80,7 +80,8 @@ by marker files on the filesystem:
    verify
 2. verify everything survived the reset, read `fromhost.bin` if the PC
    added it in between, truncate a file, remove a directory
-3. and later: read-only check of the final state
+3. and later: check the final state (no file changes; mounting still
+   updates the superblock)
 
 It prints `LWEXT4-TEST: PASS (boot N)` or `LWEXT4-TEST: FAIL: <reason>` on
 the console UART and idles. Flash it again to start over.

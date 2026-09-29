@@ -21,7 +21,7 @@
  *   boot 2: everything survived the reset; read files the host may have
  *           added in between (fromhost.bin); truncate a file, remove a
  *           directory
- *   boot 3+: the final state is stable (read only)
+ *   boot 3+: the final state is stable (no file changes)
  *
  * The result is printed on the console UART as a single line:
  *     LWEXT4-TEST: PASS (boot N)
@@ -437,7 +437,7 @@ static void phase2(const struct medium *m)
 	step(m, NULL);
 }
 
-/* Boot 3 and later: the final state is stable. Read only. */
+/* Boot 3 and later: the final state is stable. No file changes. */
 static void phase3(const struct medium *m)
 {
 	step(m, "final state: verify");

@@ -24,7 +24,7 @@ attached with -drive if=sd):
   boot 2   verify everything after the reset, read fromhost.bin, truncate a
            file and remove a directory
   host     e2fsck -fn, debugfs checks
-  boot 3   read-only check of the final state
+  boot 3   check of the final state (no file changes)
   host     e2fsck -fn, debugfs checks
 """
 import argparse
