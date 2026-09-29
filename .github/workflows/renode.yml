@@ -1,0 +1,59 @@
+# SPDX-License-Identifier: BSD-3-Clause
+#
+# lwext4 on hobby microcontroller boards, emulated by Renode: the
+# examples/baremetal-sdcard firmware is built for each board (the artifacts
+# are the images you would flash), then that same image boots in Renode with
+# an SD card on the board's SPI bus. See examples/baremetal-sdcard/README.md.
+#
+# Every step is `ci/run.sh <job>` (containers from ci/envs/), so a failing
+# job reproduces locally with only docker installed. All jobs are required.
+name: Renode boards
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  board:
+    name: renode / ${{ matrix.board }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        board:
+          - nucleo_f401re    # STM32F401RE, Cortex-M4F, 96 KiB RAM
+          - nucleo_g071rb    # STM32G071RB, Cortex-M0+, 36 KiB RAM
+          - nucleo_l552ze_q  # STM32L552ZE, Cortex-M33, 256 KiB RAM
+          - nrf52840dk       # nRF52840, Cortex-M4F, 256 KiB RAM, SPIM EasyDMA
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build firmware
+        run: ci/run.sh baremetal-sdcard-build ${{ matrix.board }}
+
+      - name: Upload flashable firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: lwext4-example-${{ matrix.board }}
+          path: examples/baremetal-sdcard/dist/${{ matrix.board }}
+          if-no-files-found: error
+
+      - name: Test in Renode
+        run: ci/run.sh renode-baremetal-sdcard ${{ matrix.board }}
+
+      - name: Upload Renode logs and card images
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: renode-test-${{ matrix.board }}
+          path: examples/baremetal-sdcard/build-${{ matrix.board }}/renode-results
+          if-no-files-found: ignore

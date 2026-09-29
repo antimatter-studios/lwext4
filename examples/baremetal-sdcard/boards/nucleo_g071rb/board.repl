@@ -1,0 +1,14 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// ST NUCLEO-G071RB. Renode's STM32G0 description, with the memory sizes of
+// the STM32G071RB (the generic one has 48 KiB SRAM).
+using "platforms/cpus/stm32g0.repl"
+
+ram:
+    size: 0x9000
+
+flash:
+    size: 0x20000
+
+// The STM32G0 has a Cortex-M0+ (ARMv6-M, like the "cortex-m0" model)
+cpu:
+    InitVectorTableOffset: 0x08000000
