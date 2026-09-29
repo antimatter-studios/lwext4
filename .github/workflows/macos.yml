@@ -9,8 +9,8 @@
 # container through ci/run.sh; macOS cannot run in docker, so this job runs
 # ci/host/macos.sh directly on the GitHub macOS runner. Its only host
 # dependencies are the preinstalled Xcode command line tools and cmake,
-# plus e2fsprogs (and pkgconf, for tests that use pkg-config) from
-# Homebrew. See ci/README.md.
+# plus from Homebrew e2fsprogs, and util-linux (sfdisk) and pkgconf for
+# tests that build partition tables or use pkg-config. See ci/README.md.
 name: macOS
 
 on:
@@ -36,10 +36,13 @@ jobs:
         variant: [clang, asan-ubsan]
     steps:
       - uses: actions/checkout@v7
-      - name: Install e2fsprogs
+      - name: Install e2fsprogs, util-linux, pkgconf
         run: |
-          brew install e2fsprogs pkgconf
-          # keg-only: mke2fs, e2fsck and debugfs are not linked into PATH
-          echo "$(brew --prefix e2fsprogs)/sbin" >> "$GITHUB_PATH"
-          echo "$(brew --prefix e2fsprogs)/bin" >> "$GITHUB_PATH"
+          brew install e2fsprogs util-linux pkgconf
+          # keg-only: mke2fs, e2fsck, debugfs and sfdisk are not linked
+          # into PATH
+          for keg in e2fsprogs util-linux; do
+            echo "$(brew --prefix $keg)/sbin" >> "$GITHUB_PATH"
+            echo "$(brew --prefix $keg)/bin" >> "$GITHUB_PATH"
+          done
       - run: ci/host/macos.sh ${{ matrix.variant }}
