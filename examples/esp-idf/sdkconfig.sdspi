@@ -1,0 +1,5 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# SD card module on a SPI bus: idf.py -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.sdspi"
+# (ci/run.sh esp32-build <target> sdspi). Real hardware only: QEMU does not
+# emulate the general purpose SPI controllers.
+CONFIG_EXAMPLE_SD_SDSPI=y
