@@ -28,6 +28,8 @@ fix/byte-order-autodetect                 # not yet submitted (part of the found
 fix/mkfs-read-info-label                  # not yet submitted (part of the foundation)
 fix/dx-init-leaf-csum                     # not yet submitted
 fix/block-size-below-sector               # not yet submitted
+fix/mbr-sector-size                       # #128 ext4_mbr on 4096/<512 byte sectors, disk signature offset (fork #11, on #104)
+feature/partition-tables                  # #129 GPT and logical MBR partitions (fork #1, #10)
 hw/esp32-qemu-rebased                     # ESP-IDF port + QEMU CI (hw/esp32-qemu on the rebuilt ci/qemu-matrix)
 hw/renode-boards                          # bare-metal SD card example on STM32/nRF52 boards, Renode CI
 feature/library-packaging                 # #125 libblockdev, lwext4.pc, CMake package (fork #2, on #119)
