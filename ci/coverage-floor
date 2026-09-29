@@ -3,5 +3,5 @@
 # Coverage can only go up: a change that adds tests raises these to the new
 # measured values (rounded down to a whole percent, which absorbs small
 # differences between compilers/architectures); nothing may lower them.
-line 43
-branch 33
+line 77
+branch 60
