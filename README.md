@@ -182,6 +182,10 @@ required:
    ```
 To run them with AddressSanitizer/UBSan, configure with
 `-DLWEXT4_SANITIZE=address,undefined`.
+
+The CI jobs run in containers defined in `ci/`, so they can be reproduced
+with only docker installed, e.g. `ci/run.sh native asan-ubsan` (see
+`ci/README.md`).
 Using lwext4-mkfs tool
 =====
 It is possible to create ext2/3/4 partition by internal library tool.
