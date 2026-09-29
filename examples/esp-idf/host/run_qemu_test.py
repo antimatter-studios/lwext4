@@ -87,15 +87,6 @@ def boot(args, n):
     extra = []
     if args.sd:
         extra.append(f"-drive file={args.sd},if=sd,format=raw")
-    if args.target in ("esp32", "esp32s3") and not args.mttcg:
-        # Espressif QEMU 9.2.2 runs the two Xtensa cores in parallel host
-        # threads (MTTCG), where a stale TLB entry pointer in the MMIO slow
-        # path occasionally turns a plain peripheral register access into
-        # a LoadStorePIFAddrError panic, especially when the flash MMU is
-        # remapped often: https://github.com/espressif/qemu/issues/174.
-        # Run both cores round-robin in one host thread instead. This only
-        # changes how QEMU schedules the emulated cores, not the firmware.
-        extra.append("-accel tcg,thread=single")
     if extra:
         cmd += ["--qemu-extra-args", " ".join(extra)]
     log(f"boot {n}: {' '.join(cmd)}")
@@ -150,11 +141,32 @@ def boot(args, n):
         else:
             verdict = f"FAIL: QEMU exited ({proc.returncode}) without a verdict"
     if not verdict.startswith("PASS"):
+        text = "".join(console) + (rest or "")
+        decode_panic(args, text)
+        if qemu_issue_174(text):
+            args.last_boot_hit_174 = True
+            log(f"boot {n}: {verdict}")
+            return None
         fail(f"boot {n}: {verdict}")
-        decode_panic(args, "".join(console) + (rest or ""))
         return None
     log(f"boot {n}: {verdict} ({elapsed:.0f} s)")
     return "".join(console)
+
+
+def qemu_issue_174(text):
+    """Espressif QEMU 9.2.2 runs the cores of the dual-core chips in parallel
+    host threads (MTTCG). A stale TLB entry pointer in QEMU's MMIO slow path
+    occasionally turns an ordinary peripheral register access into a
+    LoadStorePIFAddrError (EXCCAUSE 15) on an address in the peripheral
+    region: https://github.com/espressif/qemu/issues/174. The firmware never
+    touches peripherals directly, so this signature is the emulator, not
+    lwext4. (Running the cores on one host thread avoids it but makes the
+    run ~20x slower.)"""
+    m = re.search(r"LoadStorePIFAddrError.*?EXCVADDR\s*:\s*0x([0-9a-f]{8})", text, re.S)
+    if not m:
+        return False
+    addr = int(m.group(1), 16)
+    return 0x60000000 <= addr < 0x60100000 or 0x3FF00000 <= addr < 0x3FF80000
 
 
 def decode_panic(args, text):
@@ -365,9 +377,8 @@ def main():
     ap.add_argument("--build-dir", default=os.path.join(PROJECT, "build"))
     ap.add_argument("--flash-image", help="merged flash image (write at 0x0)")
     ap.add_argument("--timeout", type=int, default=900, help="seconds per boot")
-    ap.add_argument("--mttcg", action="store_true",
-                    help="run dual-core targets with one host thread per core "
-                    "(QEMU default; see espressif/qemu#174)")
+    ap.add_argument("--retries", type=int, default=2,
+                    help="reruns of a boot hit by the QEMU bug espressif/qemu#174")
     args = ap.parse_args()
     args.build_dir = os.path.abspath(args.build_dir)
     args.work = os.path.join(args.build_dir, "qemu-test")
@@ -390,8 +401,23 @@ def main():
         subprocess.check_call([os.path.join(HERE, "mkimage.sh"), "sd", args.sd])
 
     media = 2 if use_sd else 1
+    images = [args.flash] + ([args.sd] if args.sd else [])
     for n in (1, 2, 3):
-        console = boot(args, n)
+        for img in images:
+            shutil.copyfile(img, img + ".before")
+        for attempt in range(args.retries + 1):
+            args.last_boot_hit_174 = False
+            console = boot(args, n)
+            if not args.last_boot_hit_174:
+                break
+            # Power-cycle with the images as they were before this boot.
+            for img in images:
+                shutil.copyfile(img + ".before", img)
+            print(f"WARNING: boot {n} hit QEMU bug espressif/qemu#174 "
+                  f"(attempt {attempt + 1}); rerunning it from the same images",
+                  flush=True)
+        else:
+            fail(f"boot {n}: QEMU bug espressif/qemu#174 on every attempt")
         if console is None:
             break
         if n == 2:

@@ -286,13 +286,17 @@ configuration, and SD on SPI (QEMU has no general purpose SPI controller
 model; that variant is only built). ESP32-C3 and ESP32-S3 have no SD
 emulation, so on those chips only the flash path runs in QEMU.
 
-The dual-core chips (ESP32, ESP32-S3) are run with `-accel tcg,thread=single`
-(both cores scheduled round-robin on one host thread). With QEMU's default
-of one host thread per core, Espressif QEMU 9.2.2 occasionally panics the
-firmware with a `LoadStorePIFAddrError` on an ordinary peripheral register
-access ([espressif/qemu#174](https://github.com/espressif/qemu/issues/174));
-we hit it on the ESP32-S3 in about one run in four.
-`host/run_qemu_test.py --mttcg` restores the default.
+Known emulator bug: with the two cores of the ESP32/ESP32-S3 running in
+parallel host threads, Espressif QEMU 9.2.2 occasionally panics the firmware
+with a `LoadStorePIFAddrError` on an ordinary peripheral register access
+([espressif/qemu#174](https://github.com/espressif/qemu/issues/174)); we
+saw it on the ESP32-S3 in about one run in four. Scheduling both cores on
+one host thread (`-accel tcg,thread=single`) avoids it but makes the run
+about 20 times slower, so instead `host/run_qemu_test.py` recognises that
+exact signature (EXCCAUSE 15 on a peripheral address - the firmware never
+accesses peripherals directly), restores the flash/SD images from before
+that boot and reruns it, at most twice, with a warning in the log. Any
+other crash fails the test.
 
 ## Licensing
 
