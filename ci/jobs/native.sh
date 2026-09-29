@@ -3,12 +3,13 @@
 # Build for the container's own architecture, run the CTest suite and the
 # e2fsprogs round trip.
 #
-#   ci/run.sh native gcc | clang | asan-ubsan
+#   ci/run.sh native gcc | clang | asan-ubsan | clang-asan-ubsan
 variant=${1:-gcc}
 case "$variant" in
 gcc)        cc=gcc;   sanitize= ;;
 clang)      cc=clang; sanitize= ;;
 asan-ubsan) cc=gcc;   sanitize=address,undefined ;;
+clang-asan-ubsan) cc=clang; sanitize=address,undefined ;;
 *) echo "unknown variant '$variant'" >&2; exit 2 ;;
 esac
 

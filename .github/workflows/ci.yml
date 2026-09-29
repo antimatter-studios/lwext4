@@ -27,7 +27,8 @@ permissions:
 
 jobs:
   # Host build (x86_64): CTest suite + e2fsprogs round trip, plain and with
-  # AddressSanitizer/UndefinedBehaviorSanitizer.
+  # AddressSanitizer/UndefinedBehaviorSanitizer (with gcc and with clang:
+  # their instrumentation and headers differ).
   native:
     name: native / ${{ matrix.variant }}
     runs-on: ubuntu-24.04
@@ -35,7 +36,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        variant: [gcc, clang, asan-ubsan]
+        variant: [gcc, clang, asan-ubsan, clang-asan-ubsan]
     steps:
       - uses: actions/checkout@v7
         with:
