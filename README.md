@@ -314,7 +314,8 @@ Run regression tests
 
 Small self-contained tests live in `tests/` and run through CTest. They need
 `mke2fs` (e2fsprogs), `sfdisk` (util-linux) and `python3` on the host to
-build their images; no root access is required:
+build their images, and `pkg-config` for `install_package`; no root access
+is required:
 ```bash
  make generic
  cd build_generic
