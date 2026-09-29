@@ -35,8 +35,14 @@ cmake --build "$build" -j"$(ci_jobs)"
 ctest --test-dir "$build" -j"$(ci_jobs)"
 ci/scripts/fs-roundtrip.sh "$build"
 
+# Some tests build the sources a second time with a different configuration
+# (e.g. without ext4_xattr.c), where a function can sit on a different line
+# (a stub instead of the real one). Count such functions once per
+# definition instead of failing on the mismatch; lines and branches of all
+# builds are merged as usual.
 mkdir -p "$out/report"
 gcovr --root . --filter 'src/' "$build" \
+	--merge-mode-functions=separate \
 	--html-details "$out/report/index.html" \
 	--html-title "lwext4 coverage" \
 	--json-summary "$out/coverage.json" --json-summary-pretty
