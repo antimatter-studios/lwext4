@@ -84,8 +84,20 @@ def boot(args, n):
     """Power on the emulated board and run until the firmware prints its
     verdict (or crashes, or the timeout expires). Returns the console log."""
     cmd = ["idf.py", "-B", args.build_dir, "qemu", "--flash-file", args.flash]
+    extra = []
     if args.sd:
-        cmd += ["--qemu-extra-args", f"-drive file={args.sd},if=sd,format=raw"]
+        extra.append(f"-drive file={args.sd},if=sd,format=raw")
+    if args.target in ("esp32", "esp32s3") and not args.mttcg:
+        # Espressif QEMU 9.2.2 runs the two Xtensa cores in parallel host
+        # threads (MTTCG), where a stale TLB entry pointer in the MMIO slow
+        # path occasionally turns a plain peripheral register access into
+        # a LoadStorePIFAddrError panic, especially when the flash MMU is
+        # remapped often: https://github.com/espressif/qemu/issues/174.
+        # Run both cores round-robin in one host thread instead. This only
+        # changes how QEMU schedules the emulated cores, not the firmware.
+        extra.append("-accel tcg,thread=single")
+    if extra:
+        cmd += ["--qemu-extra-args", " ".join(extra)]
     log(f"boot {n}: {' '.join(cmd)}")
     logf = os.path.join(args.work, f"boot{n}.log")
     proc = subprocess.Popen(
@@ -353,6 +365,9 @@ def main():
     ap.add_argument("--build-dir", default=os.path.join(PROJECT, "build"))
     ap.add_argument("--flash-image", help="merged flash image (write at 0x0)")
     ap.add_argument("--timeout", type=int, default=900, help="seconds per boot")
+    ap.add_argument("--mttcg", action="store_true",
+                    help="run dual-core targets with one host thread per core "
+                    "(QEMU default; see espressif/qemu#174)")
     args = ap.parse_args()
     args.build_dir = os.path.abspath(args.build_dir)
     args.work = os.path.join(args.build_dir, "qemu-test")
