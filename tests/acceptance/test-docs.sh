@@ -22,11 +22,23 @@ docker_deps=$(sed -n 's/^RUN \(apt-get install\) -y /\1 /p' "$dockerfile" | head
 [ "$readme_deps" = "$docker_deps" ] ||
 	die "README: '$readme_deps', Dockerfile: '$docker_deps'"
 pass "README.md Debian package list is what acceptance-debian installs"
-tr '\n' ' ' <"$TOP_DIR/README.md" | grep -q 'need `mke2fs` (e2fsprogs)' ||
-	die "README.md no longer says the regression tests need e2fsprogs"
-grep -q '^RUN apt-get install -y e2fsprogs$' "$dockerfile" ||
-	die "acceptance-debian does not install e2fsprogs"
-pass "README.md e2fsprogs requirement is what acceptance-debian installs"
+# The tools README.md's "Run regression tests" says the tests need, and the
+# Debian package of each: exactly these are acceptance-debian's second
+# install command.
+tests_text=$(sed -n '/^Run regression tests/,/^```/p' "$TOP_DIR/README.md" | tr '\n' ' ')
+tests_pkgs=
+for tool_pkg in mke2fs:e2fsprogs sfdisk:fdisk python3:python3 pkg-config:pkgconf; do
+	tool=${tool_pkg%%:*}
+	case "$tests_text" in
+	*"\`$tool\`"*) ;;
+	*) die "README.md no longer says the regression tests need $tool" ;;
+	esac
+	tests_pkgs="$tests_pkgs${tests_pkgs:+ }${tool_pkg#*:}"
+done
+docker_tests_pkgs=$(sed -n 's/^RUN apt-get install -y //p' "$dockerfile" | sed -n 2p)
+[ "$docker_tests_pkgs" = "$tests_pkgs" ] ||
+	die "acceptance-debian installs '$docker_tests_pkgs' for the tests, README.md: '$tests_pkgs'"
+pass "README.md regression test requirements are what acceptance-debian installs ($tests_pkgs)"
 
 step "README.md project tree"
 sed -n '/^Project tree/,/^Compile/p' "$TOP_DIR/README.md" |
@@ -41,15 +53,20 @@ step "Makefile targets named in README.md"
 # The make database lists every target; nothing is run.
 make -C "$TOP_DIR" -pRrq : 2>/dev/null |
 	sed -n 's/^\([a-zA-Z0-9_+.-][^:=# \t]*\):.*/\1/p' | sort -u >"$WORK/targets.txt"
-# "make <target>" in the prose, and in code blocks before any "cd" (after
-# "cd build_*" it is the CMake generated Makefile's target)
+# "make <target>" in code blocks before any "cd" (after "cd build_*" it is
+# the CMake generated Makefile's target), and in the prose unless a block
+# runs it as such a CMake target (e.g. "make install")
+for key in $(sh "$ACC_DIR/readme-blocks.sh" list | cut -f1); do
+	sh "$ACC_DIR/readme-blocks.sh" show "$key" |
+		awk '/^cd / { cd = 1 } /^(sudo )?make [a-z0-9_+-]*$/ { print cd + 0, $NF }'
+done >"$WORK/block-targets.txt"
 {
-	grep -o '`make [a-z0-9_+-]*`' "$TOP_DIR/README.md" | tr -d '`'
-	for key in $(sh "$ACC_DIR/readme-blocks.sh" list | cut -f1); do
-		sh "$ACC_DIR/readme-blocks.sh" show "$key" |
-			awk '/^cd / { exit } /^make [a-z0-9_+-]*$/ { print }'
+	awk '$1 == 0 { print $2 }' "$WORK/block-targets.txt"
+	grep -o '`make [a-z0-9_+-]*`' "$TOP_DIR/README.md" | tr -d '`' |
+		awk '{ print $2 }' | while read -r target; do
+		grep -Fqx "1 $target" "$WORK/block-targets.txt" || echo "$target"
 	done
-} | awk '{ print $2 }' | sort -u >"$WORK/readme-targets.txt"
+} | sort -u >"$WORK/readme-targets.txt"
 for target in $(cat "$WORK/readme-targets.txt"); do
 	grep -Fqx -- "$target" "$WORK/targets.txt" ||
 		die "README.md mentions 'make $target', which the Makefile does not have"

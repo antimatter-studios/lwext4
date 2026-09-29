@@ -6,7 +6,9 @@
 #
 #   readme-blocks.sh list          key and first line of every block
 #   readme-blocks.sh show <key>    print one block
-#   readme-blocks.sh run <key>...  run blocks from the repository root
+#   readme-blocks.sh run <key>...  run blocks from the repository root (or
+#                                  from README_BLOCK_DIR, for a block that
+#                                  README.md runs in another directory)
 #   readme-blocks.sh check         every block is accounted for in
 #                                  tests/acceptance/README.md, and every key
 #                                  mentioned there still exists
@@ -87,7 +89,7 @@ run_block()
 	script=$(printf '%s\n' "$script" |
 		sed "s|^sudo |DESTDIR='$README_DESTDIR' |")
 	(
-		cd "$TOP_DIR"
+		cd "${README_BLOCK_DIR:-$TOP_DIR}"
 		PATH="$README_DESTDIR/usr/local/bin:$PATH:/sbin:/usr/sbin"
 		export PATH
 		bash -ex -c "$script"
