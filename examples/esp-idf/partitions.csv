@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Name,    Type, SubType,   Offset,  Size
+nvs,       data, nvs,       0x9000,  0x6000
+phy_init,  data, phy,       0xf000,  0x1000
+factory,   app,  factory,   0x10000, 0x100000
+# ext4 filesystems with 4 KiB blocks (the flash erase sector size).
+# ext4host: made by mke2fs on the build host and flashed with the app.
+# ext4dev:  formatted on the device by ext4_mkfs.
+ext4host,  data, undefined, ,        0x980000
+ext4dev,   data, undefined, ,        0x570000

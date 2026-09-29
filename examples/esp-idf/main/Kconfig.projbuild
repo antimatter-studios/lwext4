@@ -1,0 +1,68 @@
+# SPDX-License-Identifier: BSD-3-Clause
+menu "lwext4 example"
+
+    choice EXAMPLE_SD
+        prompt "SD card interface"
+        default EXAMPLE_SD_NONE
+        help
+            Besides the two ext4 partitions in SPI flash, the example can
+            also use an SD card. The card needs an MBR with partition 1 =
+            an ext4 filesystem made on a PC (host/mkimage.sh sd) and
+            partition 2 = spare space that the example formats itself.
+
+        config EXAMPLE_SD_NONE
+            bool "No SD card (SPI flash partitions only)"
+
+        config EXAMPLE_SD_SDMMC
+            bool "SDMMC host controller"
+            depends on SOC_SDMMC_HOST_SUPPORTED
+            help
+                The dedicated SD/MMC controller (ESP32, ESP32-S3, ESP32-P4).
+                On ESP32 slot 1 uses fixed pins: CLK=14, CMD=15, D0=2,
+                D1=4, D2=12, D3=13. Espressif's QEMU emulates this
+                controller for the ESP32.
+
+        config EXAMPLE_SD_SDSPI
+            bool "SPI bus (SD card module)"
+            help
+                A general purpose SPI controller in SD SPI mode: the usual
+                wiring for breakout boards / micro SD modules, and the only
+                option on chips without an SDMMC controller (ESP32-C3).
+    endchoice
+
+    config EXAMPLE_SDMMC_WIDTH_4
+        bool "Use 4-bit SDMMC bus"
+        depends on EXAMPLE_SD_SDMMC
+        default y
+        help
+            4 data lines. Disable to use 1-bit mode (D0 only), e.g. on
+            ESP32 modules where GPIO12 (D2) is a strapping pin that must
+            not be pulled up at reset.
+
+    if EXAMPLE_SD_SDSPI
+        config EXAMPLE_SDSPI_MOSI
+            int "MOSI GPIO"
+            default 23 if IDF_TARGET_ESP32
+            default 11 if IDF_TARGET_ESP32S3
+            default 7
+        config EXAMPLE_SDSPI_MISO
+            int "MISO GPIO"
+            default 19 if IDF_TARGET_ESP32
+            default 13 if IDF_TARGET_ESP32S3
+            default 2
+        config EXAMPLE_SDSPI_CLK
+            int "SCK GPIO"
+            default 18 if IDF_TARGET_ESP32
+            default 12 if IDF_TARGET_ESP32S3
+            default 6
+        config EXAMPLE_SDSPI_CS
+            int "CS GPIO"
+            default 5 if IDF_TARGET_ESP32
+            default 10 if IDF_TARGET_ESP32S3
+            default 10
+    endif
+
+    config EXAMPLE_TASK_STACK
+        int "Stack size of the example task (bytes)"
+        default 16384
+endmenu
