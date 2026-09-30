@@ -1,0 +1,21 @@
+/*
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
+ * mps2/an385 is QEMU's mps2-an385 machine: Arm's MPS2 FPGA board with the
+ * AN385 image, a Cortex-M3 with 4 MiB of SRAM. QEMU models no storage
+ * device on it that Zephyr has a driver for, so the disk is 2 MiB of that
+ * SRAM: Zephyr's RAM disk driver makes it disk "RAM" of the disk access
+ * API, and the firmware sees an ordinary disk. The buffer is the static
+ * array disk_buf_0 of the driver; host/run_qemu_test.py finds it in
+ * zephyr.elf and copies it out of QEMU to check the file system.
+ */
+
+/ {
+	ramdisk0 {
+		compatible = "zephyr,ram-disk";
+		disk-name = "RAM";
+		sector-size = <512>;
+		/* 2 MiB: lwext4's smallest journal is 1 MiB (1024 blocks) */
+		sector-count = <4096>;
+	};
+};
