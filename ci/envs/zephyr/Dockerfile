@@ -27,7 +27,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # GNU toolchain for Arm Cortex-M, for x86_64 or aarch64 hosts. Both archives
 # are checked against the sha256 sums published with the release. This is
 # what the SDK's setup.sh -t arm-zephyr-eabi does, minus the unchecked
-# download.
+# download. Transient server errors (HTTP 5xx) are retried.
 RUN set -e; \
 	case "$(dpkg --print-architecture)" in \
 	amd64) host=linux-x86_64; sdk_sum=$SDK_SHA256_AMD64; tc_sum=$ARM_EABI_SHA256_AMD64 ;; \
@@ -35,10 +35,10 @@ RUN set -e; \
 	*) echo "no Zephyr SDK for $(dpkg --print-architecture)"; exit 1 ;; \
 	esac; \
 	url=https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v$ZEPHYR_SDK_VERSION; \
-	curl -fsSL -o /tmp/sdk.tar.xz "$url/zephyr-sdk-${ZEPHYR_SDK_VERSION}_${host}_minimal.tar.xz"; \
+	curl -fsSL --retry 5 -o /tmp/sdk.tar.xz "$url/zephyr-sdk-${ZEPHYR_SDK_VERSION}_${host}_minimal.tar.xz"; \
 	echo "$sdk_sum  /tmp/sdk.tar.xz" | sha256sum -c -; \
 	tar -xJf /tmp/sdk.tar.xz -C /opt; \
-	curl -fsSL -o /tmp/tc.tar.xz "$url/toolchain_gnu_${host}_arm-zephyr-eabi.tar.xz"; \
+	curl -fsSL --retry 5 -o /tmp/tc.tar.xz "$url/toolchain_gnu_${host}_arm-zephyr-eabi.tar.xz"; \
 	echo "$tc_sum  /tmp/tc.tar.xz" | sha256sum -c -; \
 	mkdir -p /opt/zephyr-sdk-$ZEPHYR_SDK_VERSION/gnu; \
 	tar -xJf /tmp/tc.tar.xz -C /opt/zephyr-sdk-$ZEPHYR_SDK_VERSION/gnu; \
