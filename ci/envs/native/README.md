@@ -10,7 +10,7 @@ Builds on [base](../base). Adds the host compilers:
 | file | shows what was built |
 | pkgconf | `pkg-config`, for the `install_package` test that builds a program against the installed library |
 
-Used by `ci/jobs/native.sh <gcc|clang|asan-ubsan|clang-asan-ubsan>`: build the generic target
+Used by `ci/jobs/native.sh <gcc|clang|asan-ubsan|clang-asan-ubsan|tsan>`: build the generic target
 for the machine the container runs on (x86_64 in GitHub Actions, arm64 on a
 Raspberry Pi), run the CTest suite in `tests/` and the e2fsprogs round trip
 (`ci/scripts/fs-roundtrip.sh`: images made by `mke2fs` are modified by
@@ -21,6 +21,9 @@ lwext4 and checked by `e2fsck`, images made by `lwext4-mkfs` are checked by
 Both compilers are needed: their instrumentation and their headers differ
 (e.g. clang's `<stddef.h>` keeps an `offsetof` defined before it, gcc's
 replaces it), so each one finds undefined behaviour the other does not.
+`tsan` (clang) builds everything with `-DLWEXT4_SANITIZE=thread`: data races
+and lock order problems in tests that call lwext4 from several threads fail
+the job.
 
 ```sh
 ci/run.sh native asan-ubsan

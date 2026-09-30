@@ -10,7 +10,8 @@ file(GLOB LWEXT4_TEST_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/test_*.c)
 
 add_library(lwext4_test_util STATIC common/test_util.c)
 target_include_directories(lwext4_test_util PUBLIC common)
-target_link_libraries(lwext4_test_util lwext4 blockdev)
+find_package(Threads REQUIRED)
+target_link_libraries(lwext4_test_util lwext4 blockdev Threads::Threads)
 
 # Helper program of the README acceptance tests (not a CTest test).
 add_subdirectory(acceptance)
