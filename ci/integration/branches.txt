@@ -75,4 +75,5 @@ fix/sb-desc-size                          # #165 refuse 64bit filesystems with s
 fix/meta-bg-descriptors                   # #166 meta_bg descriptor block locations (fork #49)
 fix/dx-init-block-map                     # #167 ext4_dir_dx_init on block mapped directories (fork #50)
 tests/superblock-checks                   # #168 every superblock check of ext4_mount() (fork #51, on #111)
+fix/extent-depth-byte-order               # not yet submitted upstream: eh_depth byte order in new index blocks (fork #52, on #135)
 am/release                                # fork only: integration/release pipeline, fork README
