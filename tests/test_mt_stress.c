@@ -690,6 +690,21 @@ static void verify_all(void)
 	verify_contents(workers[0], SHARED_FILE, shared_data, SHARED_SIZE);
 }
 
+/* e2fsck -fn must find nothing to fix. (Through system(), which also
+ * marks this test as one that needs a POSIX host: tests/CMakeLists.txt
+ * disables such tests on Windows.) */
+static void mt_fsck(const char *image)
+{
+	char cmd[1024];
+	int r;
+
+	snprintf(cmd, sizeof(cmd),
+		 "PATH=\"$PATH:/sbin:/usr/sbin\" e2fsck -fn '%s'", image);
+	r = system(cmd);
+	if (r != 0)
+		mt_fail("e2fsck -fn %s: exit status %d", image, r);
+}
+
 static void mount_journal(const char *image)
 {
 	TEST_ASSERT_EQ(EOK, test_mount(image, false));

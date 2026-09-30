@@ -3,7 +3,7 @@
 /*
  * Helpers for the tests that call lwext4 from several threads (test_mt_*):
  * failing from any thread, lock callbacks that check how they are used,
- * a watchdog for deadlocks and e2fsck. Header only, like the other test
+ * a watchdog for deadlocks. Header only, like the other test
  * helpers that only some tests need.
  */
 
@@ -184,21 +184,6 @@ static uint64_t mt_seed(uint64_t seed, int t)
 	for (int i = 0; i <= t; i++)
 		seed = seed * 6364136223846793005ull + 1442695040888963407ull;
 	return seed | 1;
-}
-
-/********************************** e2fsck *********************************/
-
-/* e2fsck -fn must find nothing to fix. */
-static void mt_fsck(const char *image)
-{
-	char cmd[1024];
-	int r;
-
-	snprintf(cmd, sizeof(cmd),
-		 "PATH=\"$PATH:/sbin:/usr/sbin\" e2fsck -fn '%s'", image);
-	r = system(cmd);
-	if (r != 0)
-		mt_fail("e2fsck -fn %s: exit status %d", image, r);
 }
 
 #endif /* LWEXT4_MT_UTIL_H_ */
