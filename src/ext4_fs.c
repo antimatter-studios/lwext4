@@ -567,6 +567,46 @@ static bool ext4_fs_verify_bg_csum(struct ext4_sblock *sb,
 #define ext4_fs_verify_bg_csum(...) true
 #endif
 
+/**@brief Whether the bitmaps and the inode table of a block group
+ *        descriptor lie inside the filesystem, after the block holding the
+ *        superblock. A damaged descriptor (e.g. all zeros) would otherwise
+ *        make lwext4 read the inode table from, and initialise bitmaps
+ *        over, block 0 or the superblock.
+ * @param sb superblock
+ * @param bg block group descriptor
+ * @return true if the locations are valid*/
+static bool ext4_fs_bg_locations_valid(struct ext4_sblock *sb,
+				       struct ext4_bgroup *bg)
+{
+	uint64_t first = ext4_get32(sb, first_data_block);
+	uint64_t blocks = ext4_sb_get_blocks_cnt(sb);
+	uint32_t block_size = ext4_sb_get_block_size(sb);
+	uint32_t inode_size = ext4_get16(sb, inode_size);
+	uint32_t table_blocks = 1;
+	uint64_t b;
+
+	/* (the inode size itself is checked with the superblock) */
+	if (inode_size && inode_size <= block_size) {
+		uint32_t inodes_per_block = block_size / inode_size;
+
+		table_blocks = ext4_get32(sb, inodes_per_group) /
+			       inodes_per_block;
+		if (ext4_get32(sb, inodes_per_group) % inodes_per_block)
+			table_blocks++;
+	}
+
+	b = ext4_bg_get_block_bitmap(bg, sb);
+	if (b <= first || b >= blocks)
+		return false;
+	b = ext4_bg_get_inode_bitmap(bg, sb);
+	if (b <= first || b >= blocks)
+		return false;
+	b = ext4_bg_get_inode_table_first_block(bg, sb);
+	if (b <= first || b >= blocks || table_blocks > blocks - b)
+		return false;
+	return true;
+}
+
 int ext4_fs_get_block_group_ref(struct ext4_fs *fs, uint32_t bgid,
 				struct ext4_block_group_ref *ref)
 {
@@ -589,6 +629,14 @@ int ext4_fs_get_block_group_ref(struct ext4_fs *fs, uint32_t bgid,
 	ref->index = bgid;
 	ref->dirty = false;
 	struct ext4_bgroup *bg = ref->block_group;
+
+	if (!ext4_fs_bg_locations_valid(&fs->sb, bg)) {
+		ext4_dbg(DEBUG_FS, DBG_ERROR "Block group %" PRIu32
+			 ": bitmap or inode table outside the filesystem\n",
+			 bgid);
+		ext4_block_set(fs->bdev, &ref->block);
+		return EIO;
+	}
 
 	if (!ext4_fs_verify_bg_csum(&fs->sb, bgid, bg)) {
 		ext4_dbg(DEBUG_FS,
