@@ -748,6 +748,23 @@ static int ext4_xattr_block_find_entry(struct ext4_inode_ref *inode_ref,
  * 	   If the IO operation or the buffer validation failed,
  * 	   return other value.
  */
+/**
+ * @brief Whether the extra space of an inode starts with the xattr header.
+ *        Until an attribute is stored there it does not (e.g. every inode
+ *        lwext4 creates), and then the inode holds no attributes.
+ *
+ * @param inode_ref Inode reference
+ *
+ * @return true if the header's magic number is there
+ */
+static bool ext4_xattr_ibody_has_header(struct ext4_inode_ref *inode_ref)
+{
+	struct ext4_xattr_ibody_header *iheader =
+	    EXT4_XATTR_IHDR(&inode_ref->fs->sb, inode_ref->inode);
+
+	return iheader->h_magic == to_le32(EXT4_XATTR_MAGIC);
+}
+
 static int ext4_xattr_ibody_find_entry(struct ext4_inode_ref *inode_ref,
 				       struct ext4_xattr_finder *finder)
 {
@@ -766,6 +783,12 @@ static int ext4_xattr_ibody_find_entry(struct ext4_inode_ref *inode_ref,
 	 * set ext4_xattr_ibody_finder::s::not_found to true and return EOK
 	 */
 	if (!extra_isize) {
+		finder->s.not_found = true;
+		return EOK;
+	}
+
+	/* No header: no attributes in the inode, which is not an error */
+	if (!ext4_xattr_ibody_has_header(inode_ref)) {
 		finder->s.not_found = true;
 		return EOK;
 	}
@@ -1529,6 +1552,11 @@ int ext4_xattr_set(struct ext4_inode_ref *inode_ref, uint8_t name_index,
 	ibody_finder.i = i;
 
 	orig_xattr_block = ext4_inode_get_file_acl(inode_ref->inode, &fs->sb);
+
+	/* An inode without attributes gets the header first, so that the
+	 * search context below can be used to insert the entry. */
+	if (extra_isize && !ext4_xattr_ibody_has_header(inode_ref))
+		ext4_xattr_ibody_initialize(inode_ref);
 
 	/*
 	 * Even if entry is not found, search context block inside the
