@@ -295,8 +295,11 @@ one host thread (`-accel tcg,thread=single`) avoids it but makes the run
 about 20 times slower, so instead `host/run_qemu_test.py` recognises that
 exact signature (EXCCAUSE 15 on a peripheral address - the firmware never
 accesses peripherals directly), restores the flash/SD images from before
-that boot and reruns it, at most twice, with a warning in the log. Any
-other crash fails the test.
+that boot and reruns it, at most four times, with a warning in the log.
+The same goes for QEMU itself crashing (dying of SIGSEGV, SIGBUS, SIGABRT,
+SIGILL or SIGFPE; `idf.py qemu` hides QEMU's exit status, so the runner
+puts a wrapper that prints it first on `PATH`). Any other crash, and QEMU
+exiting on its own without a verdict, fails the test.
 
 ## Licensing
 

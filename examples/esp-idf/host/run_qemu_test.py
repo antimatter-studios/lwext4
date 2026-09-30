@@ -56,6 +56,10 @@ BIG_SIZE = {"flash": 256 * 1024 + 123, "sd": 1024 * 1024 + 4321}
 DEV_MANY_FILES = 100
 
 RESULT_RE = re.compile(r"LWEXT4-TEST: (PASS.*|FAIL.*)")
+QEMU_EXIT_RE = re.compile(r"^QEMU-EXIT: (\d+)$", re.M)
+# Signals a process dies of when it crashes (not the SIGTERM/SIGKILL that
+# boot() sends once it has a verdict or the timeout has expired).
+CRASH_SIGNALS = {signal.SIGSEGV, signal.SIGBUS, signal.SIGABRT, signal.SIGILL, signal.SIGFPE}
 CRASH_RE = re.compile(
     r"Guru Meditation|abort\(\) was called|Backtrace:|Rebooting\.\.\.|"
     r"assertion failed|Stack canary|stack overflow|CORRUPT HEAP"
@@ -78,6 +82,44 @@ def run(cmd, **kw):
 
 
 # --------------------------------------------------------------------- QEMU
+
+
+def install_qemu_wrappers(args):
+    """idf.py qemu runs QEMU with subprocess.run() and ignores its exit
+    status, so when QEMU itself dies in the middle of a boot, idf.py prints
+    "Done" and exits 0, and all the log shows is the firmware's output
+    stopping. Put a wrapper for each QEMU binary first on PATH (idf.py runs
+    them by name) that prints QEMU's exit status after it ends, for boot()
+    to read."""
+    wrappers = os.path.join(args.work, "qemu-wrappers")
+    os.makedirs(wrappers)
+    for name in ("qemu-system-xtensa", "qemu-system-riscv32"):
+        real = shutil.which(name)
+        if not real:
+            continue
+        path = os.path.join(wrappers, name)
+        with open(path, "w") as f:
+            # The shell reports death by signal N as status 128 + N.
+            f.write(f'#!/bin/sh\n"{real}" "$@"\nstatus=$?\necho "QEMU-EXIT: $status"\nexit $status\n')
+        os.chmod(path, 0o755)
+    os.environ["PATH"] = wrappers + os.pathsep + os.environ["PATH"]
+
+
+def qemu_status(text):
+    """QEMU's exit status as printed by the wrapper, or None."""
+    m = QEMU_EXIT_RE.search(text)
+    return int(m.group(1)) if m else None
+
+
+def qemu_crash_signal(status):
+    """The signal QEMU crashed with, if its exit status says it did."""
+    if status is None or status <= 128:
+        return None
+    try:
+        sig = signal.Signals(status - 128)
+    except ValueError:
+        return None
+    return sig if sig in CRASH_SIGNALS else None
 
 
 def boot(args, n):
@@ -135,16 +177,22 @@ def boot(args, n):
     with open(logf, "a") as out:
         out.write(rest or "")
     elapsed = time.monotonic() - start
+    text = "".join(console) + (rest or "")
+    status = qemu_status(text)
+    crash = None
     if verdict is None:
+        crash = qemu_crash_signal(status)
         if elapsed >= args.timeout:
             verdict = f"FAIL: timeout after {args.timeout} s"
+        elif crash:
+            verdict = f"FAIL: QEMU crashed ({crash.name}) without a verdict"
         else:
-            verdict = f"FAIL: QEMU exited ({proc.returncode}) without a verdict"
+            shown = "unknown" if status is None else status
+            verdict = f"FAIL: QEMU exited (status {shown}) without a verdict"
     if not verdict.startswith("PASS"):
-        text = "".join(console) + (rest or "")
         decode_panic(args, text)
-        if qemu_issue_174(text):
-            args.last_boot_hit_174 = True
+        if qemu_issue_174(text) or crash:
+            args.last_boot_emulator_bug = True
             log(f"boot {n}: {verdict}")
             return None
         fail(f"boot {n}: {verdict}")
@@ -161,7 +209,13 @@ def qemu_issue_174(text):
     region: https://github.com/espressif/qemu/issues/174. The firmware never
     touches peripherals directly, so this signature is the emulator, not
     lwext4. (Running the cores on one host thread avoids it but makes the
-    run ~20x slower.)"""
+    run ~20x slower.)
+
+    On the same boots QEMU itself also dies now and then, with no message
+    (the stale pointer points into TLB arrays that QEMU frees when it
+    resizes the TLB). boot() treats QEMU dying of a crash signal on its own
+    the same way: whatever the firmware does, a correct emulator does not
+    crash."""
     m = re.search(r"LoadStorePIFAddrError.*?EXCVADDR\s*:\s*0x([0-9a-f]{8})", text, re.S)
     if not m:
         return False
@@ -377,8 +431,9 @@ def main():
     ap.add_argument("--build-dir", default=os.path.join(PROJECT, "build"))
     ap.add_argument("--flash-image", help="merged flash image (write at 0x0)")
     ap.add_argument("--timeout", type=int, default=900, help="seconds per boot")
-    ap.add_argument("--retries", type=int, default=2,
-                    help="reruns of a boot hit by the QEMU bug espressif/qemu#174")
+    ap.add_argument("--retries", type=int, default=4,
+                    help="reruns of a boot hit by the QEMU bug espressif/qemu#174 "
+                    "(firmware panic on a peripheral address, or QEMU crashing)")
     args = ap.parse_args()
     args.build_dir = os.path.abspath(args.build_dir)
     args.work = os.path.join(args.build_dir, "qemu-test")
@@ -394,6 +449,7 @@ def main():
     use_sd = bool(sdkconfig_value(args.build_dir, "EXAMPLE_SD_SDMMC"))
     log(f"target {target}, SD card on SDMMC: {'yes' if use_sd else 'no'}")
 
+    install_qemu_wrappers(args)
     prepare_flash(args, target)
     args.sd = None
     if use_sd:
@@ -406,9 +462,9 @@ def main():
         for img in images:
             shutil.copyfile(img, img + ".before")
         for attempt in range(args.retries + 1):
-            args.last_boot_hit_174 = False
+            args.last_boot_emulator_bug = False
             console = boot(args, n)
-            if not args.last_boot_hit_174:
+            if not args.last_boot_emulator_bug:
                 break
             # Power-cycle with the images as they were before this boot.
             for img in images:
