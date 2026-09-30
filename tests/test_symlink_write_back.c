@@ -10,6 +10,10 @@
  * readlink returned whatever the block held before: the right length,
  * wrong bytes. The block has to reach the device when the symlink is
  * made, like file data does.
+ *
+ * red-green: guard (passes on the foundation, which wrote the target to
+ * the device; it fails with the zero padding of test_symlink_slow_zero
+ * alone, which is what this branch builds on)
  */
 
 #include "test_util.h"
