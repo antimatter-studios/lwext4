@@ -94,6 +94,9 @@ struct replay_arg {
 
 	/**@brief  Current trans_id we are on.*/
 	uint32_t this_trans_id;
+
+	/**@brief  Error of the first block that could not be replayed.*/
+	int error;
 };
 
 /* Make sure we wrap around the log correctly! */
@@ -920,14 +923,14 @@ static void jbd_replay_block_tags(struct jbd_fs *jbd_fs,
 
 	r = jbd_block_get(jbd_fs, &journal_block, *this_block);
 	if (r != EOK)
-		return;
+		goto Finish;
 
 	/* We need special treatment for ext4 superblock. */
 	if (tag_info->block) {
 		r = ext4_block_get_noread(fs->bdev, &ext4_block, tag_info->block);
 		if (r != EOK) {
 			jbd_block_set(jbd_fs, &journal_block);
-			return;
+			goto Finish;
 		}
 
 		memcpy(ext4_block.data,
@@ -938,7 +941,10 @@ static void jbd_replay_block_tags(struct jbd_fs *jbd_fs,
 			((struct jbd_bhdr *)ext4_block.data)->magic =
 					to_be32(JBD_MAGIC_NUMBER);
 
+		/* The block has to reach the disk before the journal
+		 * is marked empty. */
 		ext4_bcache_set_dirty(ext4_block.buf);
+		r = ext4_block_flush_buf(fs->bdev, ext4_block.buf);
 		ext4_block_set(fs->bdev, &ext4_block);
 	} else {
 		uint16_t mount_count, state;
@@ -952,16 +958,15 @@ static void jbd_replay_block_tags(struct jbd_fs *jbd_fs,
 		/* Mark system as mounted */
 		ext4_set16(&fs->sb, state, state);
 		r = ext4_sb_write(fs->bdev, &fs->sb);
-		if (r != EOK)
-			return;
 
 		/*Update mount count*/
 		ext4_set16(&fs->sb, mount_count, mount_count);
 	}
 
 	jbd_block_set(jbd_fs, &journal_block);
-	
-	return;
+Finish:
+	if (r != EOK && arg->error == EOK)
+		arg->error = r;
 }
 
 /**@brief  Add block address to revoke tree, along with
@@ -1153,9 +1158,16 @@ static int jbd_iterate_log(struct jbd_fs *jbd_fs,
 				replay_arg.info = info;
 				replay_arg.this_block = &this_block;
 				replay_arg.this_trans_id = this_trans_id;
+				replay_arg.error = EOK;
 
 				jbd_replay_descriptor_block(jbd_fs,
 						header, &replay_arg);
+				/* The journal must not be marked empty
+				 * while a block is not replayed. */
+				if (replay_arg.error != EOK) {
+					r = replay_arg.error;
+					log_end = true;
+				}
 			} else
 				jbd_debug_descriptor_block(jbd_fs,
 						header, &this_block);
@@ -1239,18 +1251,22 @@ int jbd_recover(struct jbd_fs *jbd_fs)
 
 	r = jbd_iterate_log(jbd_fs, &info, ACTION_SCAN);
 	if (r != EOK)
-		return r;
+		goto Finish;
 
 	r = jbd_iterate_log(jbd_fs, &info, ACTION_REVOKE);
 	if (r != EOK)
-		return r;
+		goto Finish;
 
 	r = jbd_iterate_log(jbd_fs, &info, ACTION_RECOVER);
 	if (r == EOK) {
 		/* If we successfully replay the journal,
 		 * clear EXT4_FINCOM_RECOVER flag on the
 		 * ext4 superblock, and set the start of
-		 * journal to 0.*/
+		 * journal to 0. The journal is marked empty
+		 * first: with the flag cleared and the old
+		 * start on the disk, a later recovery would
+		 * replay the transactions again, over newer
+		 * changes.*/
 		uint32_t features_incompatible =
 			ext4_get32(&jbd_fs->inode_ref.fs->sb,
 				   features_incompatible);
@@ -1260,14 +1276,18 @@ int jbd_recover(struct jbd_fs *jbd_fs)
 		 * including a transaction whose commit block never made
 		 * it to disk. */
 		jbd_set32(&jbd_fs->sb, sequence, info.last_trans_id + 1);
+		r = jbd_sb_write(jbd_fs, &jbd_fs->sb);
+		if (r != EOK)
+			goto Finish;
+
 		features_incompatible &= ~EXT4_FINCOM_RECOVER;
 		ext4_set32(&jbd_fs->inode_ref.fs->sb,
 			   features_incompatible,
 			   features_incompatible);
-		jbd_fs->dirty = true;
 		r = ext4_sb_write(jbd_fs->bdev,
 				  &jbd_fs->inode_ref.fs->sb);
 	}
+Finish:
 	jbd_destroy_revoke_tree(&info);
 	return r;
 }
