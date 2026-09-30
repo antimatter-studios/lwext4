@@ -32,6 +32,7 @@ fix/mbr-sector-size                       # #128 ext4_mbr on 4096/<512 byte sect
 feature/partition-tables                  # #129 GPT and logical MBR partitions (fork #1, #10)
 hw/esp32-qemu-rebased                     # ESP-IDF port + QEMU CI (hw/esp32-qemu on the rebuilt ci/qemu-matrix)
 hw/renode-boards                          # bare-metal SD card example on STM32/nRF52 boards, Renode CI
+hw/zephyr-qemu                            # fork only: Zephyr module and example, QEMU CI on mps2/an385 (fork #55)
 feature/library-packaging                 # #125 libblockdev, lwext4.pc, CMake package (fork #2, on #119)
 docs/examples                             # #126 examples and getting started (fork #3)
 feature/macos                             # #127 macOS: file_dev disk devices, CI job (fork #4)
@@ -76,4 +77,10 @@ fix/meta-bg-descriptors                   # #166 meta_bg descriptor block locati
 fix/dx-init-block-map                     # #167 ext4_dir_dx_init on block mapped directories (fork #50)
 tests/superblock-checks                   # #168 every superblock check of ext4_mount() (fork #51, on #111)
 fix/extent-depth-byte-order               # not yet submitted upstream: eh_depth byte order in new index blocks (fork #52, on #135)
+fix/journal-checkpoint-io-error           # not yet submitted upstream: keep journal transactions whose blocks cannot be written (fork #53, on #153)
+fix/journal-recover-io-error              # not yet submitted upstream: ext4_recover reports replay errors (fork #54, on #153 and #114)
+fix/readlink-nested-lock                  # not yet submitted upstream: ext4_readlink locks the mount point once (fork #56)
+fix/bdif-ph-bbuf-lock                     # not yet submitted upstream: physical block buffer only under the interface lock (fork #57)
+fix/xattr-get-no-ibody-header             # not yet submitted upstream: no in-inode xattr header means no attributes (fork #58, on #130)
+tests/mt-stress                           # not yet submitted upstream: multi-thread stress test and TSan CI job, #79 #83 (fork #59)
 am/release                                # fork only: integration/release pipeline, fork README
