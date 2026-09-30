@@ -84,4 +84,7 @@ fix/bdif-ph-bbuf-lock                     # not yet submitted upstream: physical
 fix/symlink-slow-direct-write             # not yet submitted upstream: slow symlink block written to the device, corrects #131 (fork #60, on #131)
 fix/xattr-get-no-ibody-header             # not yet submitted upstream: no in-inode xattr header means no attributes (fork #58, on #130)
 tests/mt-stress                           # not yet submitted upstream: multi-thread stress test and TSan CI job, #79 #83 (fork #59)
+tests/mt-partitions                       # not yet submitted upstream: threads on two mount points on one disk (fork #62, on #59 and #57)
+fix/bg-desc-locations                     # not yet submitted upstream: refuse block group descriptors with impossible locations (fork #63)
+fix/xattr-extra-isize                     # not yet submitted upstream: no in-inode attributes when i_extra_isize leaves no room (fork #64, on #58)
 am/release                                # fork only: integration/release pipeline, fork README
