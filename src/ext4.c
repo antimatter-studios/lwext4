@@ -1706,11 +1706,8 @@ static int ext4_fread_no_lock(ext4_file *file, void *buf, size_t size,
 	iblock_last = (uint32_t)((file->fpos + size) / block_size);
 	unalg = (file->fpos) % block_size;
 
-	/*If the size of symlink is smaller than 60 bytes*/
-	bool softlink;
-	softlink = ext4_inode_is_type(sb, ref.inode, EXT4_INODE_MODE_SOFTLINK);
-	if (softlink && file->fsize < sizeof(ref.inode->blocks)
-		     && !ext4_inode_get_blocks_count(sb, ref.inode)) {
+	/*Fast symlink: the target is stored in i_block*/
+	if (ext4_inode_is_fast_symlink(sb, ref.inode)) {
 
 		char *content = (char *)ref.inode->blocks;
 		if (file->fpos < file->fsize) {
