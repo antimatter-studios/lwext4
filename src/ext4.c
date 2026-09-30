@@ -1702,7 +1702,8 @@ int ext4_ftruncate(ext4_file *f, uint64_t size)
 	return r;
 }
 
-int ext4_fread(ext4_file *file, void *buf, size_t size, size_t *rcnt)
+static int ext4_fread_no_lock(ext4_file *file, void *buf, size_t size,
+			      size_t *rcnt)
 {
 	uint32_t unalg;
 	uint32_t iblock_idx;
@@ -1717,16 +1718,6 @@ int ext4_fread(ext4_file *file, void *buf, size_t size, size_t *rcnt)
 	int r;
 	struct ext4_inode_ref ref;
 
-	ext4_assert(file && file->mp);
-
-	if (file->flags & O_WRONLY)
-		return EPERM;
-
-	if (!size)
-		return EOK;
-
-	EXT4_MP_LOCK(file->mp);
-
 	struct ext4_fs *const fs = &file->mp->fs;
 	struct ext4_sblock *const sb = &file->mp->fs.sb;
 
@@ -1734,10 +1725,8 @@ int ext4_fread(ext4_file *file, void *buf, size_t size, size_t *rcnt)
 		*rcnt = 0;
 
 	r = ext4_fs_get_inode_ref(fs, file->inode, &ref);
-	if (r != EOK) {
-		EXT4_MP_UNLOCK(file->mp);
+	if (r != EOK)
 		return r;
-	}
 
 	/*Sync file size*/
 	file->fsize = ext4_inode_get_size(sb, ref.inode);
@@ -1865,6 +1854,23 @@ int ext4_fread(ext4_file *file, void *buf, size_t size, size_t *rcnt)
 
 Finish:
 	ext4_fs_put_inode_ref(&ref);
+	return r;
+}
+
+int ext4_fread(ext4_file *file, void *buf, size_t size, size_t *rcnt)
+{
+	int r;
+
+	ext4_assert(file && file->mp);
+
+	if (file->flags & O_WRONLY)
+		return EPERM;
+
+	if (!size)
+		return EOK;
+
+	EXT4_MP_LOCK(file->mp);
+	r = ext4_fread_no_lock(file, buf, size, rcnt);
 	EXT4_MP_UNLOCK(file->mp);
 	return r;
 }
@@ -2641,7 +2647,7 @@ int ext4_readlink(const char *path, char *buf, size_t bufsize, size_t *rcnt)
 	ext4_block_cache_write_back(mp->fs.bdev, 1);
 	r = ext4_generic_open2(&f, path, O_RDONLY, filetype, NULL, NULL);
 	if (r == EOK)
-		r = ext4_fread(&f, buf, bufsize, rcnt);
+		r = ext4_fread_no_lock(&f, buf, bufsize, rcnt);
 	else
 		goto Finish;
 
