@@ -135,7 +135,7 @@ void jbd_journal_free_trans(struct jbd_journal *journal,
 			    bool abort);
 int jbd_journal_commit_trans(struct jbd_journal *journal,
 			     struct jbd_trans *trans);
-void
+int
 jbd_journal_purge_cp_trans(struct jbd_journal *journal,
 			   bool flush,
 			   bool once);

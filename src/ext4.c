@@ -537,14 +537,12 @@ static int __ext4_journal_stop(const char *mount_point)
 
 	if (ext4_sb_feature_com(&mp->fs.sb,
 				EXT4_FCOM_HAS_JOURNAL)) {
+		/* If the journalled blocks cannot all be written, the
+		 * journal stays in use (and marked for replay), so that
+		 * ext4_journal_stop() can be called again. */
 		r = jbd_journal_stop(&mp->jbd_journal);
-		if (r != EOK) {
-			mp->jbd_fs.dirty = false;
-			jbd_put_fs(&mp->jbd_fs);
-			mp->fs.jbd_journal = NULL;
-			mp->fs.jbd_fs = NULL;
+		if (r != EOK)
 			goto Finish;
-		}
 
 		r = jbd_put_fs(&mp->jbd_fs);
 		if (r != EOK) {
