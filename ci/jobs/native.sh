@@ -3,13 +3,14 @@
 # Build for the container's own architecture, run the CTest suite and the
 # e2fsprogs round trip.
 #
-#   ci/run.sh native gcc | clang | asan-ubsan | clang-asan-ubsan
+#   ci/run.sh native gcc | clang | asan-ubsan | clang-asan-ubsan | tsan
 variant=${1:-gcc}
 case "$variant" in
 gcc)        cc=gcc;   sanitize= ;;
 clang)      cc=clang; sanitize= ;;
 asan-ubsan) cc=gcc;   sanitize=address,undefined ;;
 clang-asan-ubsan) cc=clang; sanitize=address,undefined ;;
+tsan)       cc=clang; sanitize=thread ;;
 *) echo "unknown variant '$variant'" >&2; exit 2 ;;
 esac
 
@@ -25,6 +26,7 @@ cc --version | head -n 1
 export ASAN_OPTIONS=detect_leaks=1:abort_on_error=1
 export LSAN_OPTIONS=suppressions=$PWD/ci/lsan.supp
 export UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1
+export TSAN_OPTIONS=halt_on_error=1:second_deadlock_stack=1
 
 cmake -S . -B "$build/b" \
 	-DCMAKE_TOOLCHAIN_FILE=toolchain/generic.cmake \
