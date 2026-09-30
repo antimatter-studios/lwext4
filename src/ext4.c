@@ -526,15 +526,27 @@ static int __ext4_journal_stop(const char *mount_point)
 	if (!mp)
 		return ENOENT;
 
-	if (mp->fs.read_only)
+	/* Read only, unless the journal failed during this session
+	 * (jbd_journal::error), which makes the filesystem read only */
+	if (mp->fs.read_only && !mp->fs.jbd_journal)
 		return EOK;
 
 	if (ext4_sb_feature_com(&mp->fs.sb,
 				EXT4_FCOM_HAS_JOURNAL)) {
 		/* If the journalled blocks cannot all be written, the
 		 * journal stays in use (and marked for replay), so that
-		 * ext4_journal_stop() can be called again. */
+		 * ext4_journal_stop() can be called again. After the
+		 * journal failed that cannot succeed: the session ends
+		 * without writing the journal, which stays marked for
+		 * replay. */
 		r = jbd_journal_stop(&mp->jbd_journal);
+		if (r != EOK && mp->jbd_journal.error != EOK) {
+			mp->jbd_fs.dirty = false;
+			jbd_put_fs(&mp->jbd_fs);
+			mp->fs.jbd_journal = NULL;
+			mp->fs.jbd_fs = NULL;
+			goto Finish;
+		}
 		if (r != EOK)
 			goto Finish;
 
@@ -618,6 +630,10 @@ static int __ext4_trans_start(struct ext4_mountpoint *mp)
 	if (mp->fs.jbd_journal && !mp->fs.curr_trans) {
 		struct jbd_journal *journal = mp->fs.jbd_journal;
 		struct jbd_trans *trans;
+
+		if (journal->error != EOK)
+			return journal->error;
+
 		trans = jbd_journal_new_trans(journal);
 		if (!trans) {
 			r = ENOMEM;

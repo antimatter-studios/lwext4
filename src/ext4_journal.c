@@ -1289,6 +1289,7 @@ int jbd_journal_start(struct jbd_fs *jbd_fs,
 	 * plus 1.
 	 */
 	journal->trans_id = jbd_get32(&jbd_fs->sb, sequence) + 1;
+	journal->error = EOK;
 	journal->alloc_trans_id = journal->trans_id;
 
 	journal->block_size = jbd_get32(&jbd_fs->sb, blocksize);
@@ -1433,6 +1434,20 @@ int jbd_journal_stop(struct jbd_journal *journal)
 	struct jbd_fs *jbd_fs = journal->jbd_fs;
 	uint32_t features_incompatible;
 
+	/* The blocks in the cache cannot be trusted any more: drop the
+	 * transactions without writing anything. The journal stays marked
+	 * for replay, which restores everything that was committed. */
+	if (journal->error != EOK) {
+		struct jbd_trans *trans;
+
+		while ((trans = TAILQ_LAST(&journal->cp_queue,
+					   jbd_cp_queue)) != NULL) {
+			TAILQ_REMOVE(&journal->cp_queue, trans, trans_node);
+			jbd_journal_free_trans(journal, trans, true);
+		}
+		return journal->error;
+	}
+
 	/* Make sure that journalled content have reached
 	 * the disk. If some of it cannot be written, the journal
 	 * still needs to be replayed: keep it marked so.*/
@@ -1543,6 +1558,28 @@ jbd_trans_insert_block_rec(struct jbd_trans *trans,
 /*
  * This routine will do the dirty works.
  */
+/*
+ * The committed version of a block of an aborted transaction cannot be put
+ * back into the cache (reading its journal copy failed). The cache holds
+ * the aborted contents: drop them, so that they never reach the disk, and
+ * give the block back to the transaction that committed it, which then
+ * cannot be written back and stays in the journal. The filesystem makes
+ * no more changes (read only) until the journal is replayed at the next
+ * mount.
+ */
+static void jbd_trans_restore_failed(struct jbd_journal *journal,
+				     struct jbd_block_rec *block_rec,
+				     struct jbd_buf *jbd_buf, int r)
+{
+	struct ext4_fs *fs = journal->jbd_fs->inode_ref.fs;
+
+	ext4_bcache_invalidate_lba(fs->bdev->bc, block_rec->lba, 1);
+	jbd_trans_change_ownership(block_rec, jbd_buf->trans);
+	if (journal->error == EOK)
+		journal->error = r;
+	fs->read_only = true;
+}
+
 static void
 jbd_trans_finish_callback(struct jbd_journal *journal,
 			  const struct jbd_trans *trans,
@@ -1577,15 +1614,24 @@ jbd_trans_finish_callback(struct jbd_journal *journal,
 				jbd_buf_dirty);
 		if (jbd_buf) {
 			if (!revoke) {
-				int r;
-				r = ext4_block_get_noread(fs->bdev,
+				int r = journal->error;
+
+				if (r == EOK)
+					r = ext4_block_get_noread(fs->bdev,
 							&block,
 							block_rec->lba);
-				ext4_assert(r == EOK);
-				r = jbd_block_get(journal->jbd_fs,
+				if (r == EOK) {
+					r = jbd_block_get(journal->jbd_fs,
 							&jbd_block,
 							jbd_buf->jbd_lba);
-				ext4_assert(r == EOK);
+					if (r != EOK)
+						ext4_block_set(fs->bdev, &block);
+				}
+				if (r != EOK) {
+					jbd_trans_restore_failed(journal,
+							block_rec, jbd_buf, r);
+					return;
+				}
 				memcpy(block.data, jbd_block.data,
 						journal->block_size);
 

@@ -103,6 +103,12 @@ struct jbd_journal {
 
 	uint32_t block_size;
 
+	/* First error that left the blocks in the cache unusable (a block
+	 * whose committed version could not be put back when a transaction
+	 * was aborted). The session then makes no more changes and ends
+	 * without writing: the journal is replayed at the next mount. */
+	int error;
+
 	TAILQ_HEAD(jbd_cp_queue, jbd_trans) cp_queue;
 	RB_HEAD(jbd_block, jbd_block_rec) block_rec_root;
 
