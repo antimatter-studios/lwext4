@@ -1,0 +1,15 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// ST NUCLEO-F401RE. Renode's generic STM32F4 description, with the memory
+// sizes of the STM32F401RE (the generic one has 256 KiB SRAM / 2 MiB flash).
+using "platforms/cpus/stm32f4.repl"
+
+sram:
+    size: 0x18000
+
+flash:
+    size: 0x80000
+
+// BOOT0 low: the flash is aliased at 0, the core fetches its vector table
+// from the start of the flash.
+cpu:
+    InitVectorTableOffset: 0x08000000
