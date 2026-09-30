@@ -565,6 +565,32 @@ static bool ext4_xattr_is_block_valid(struct ext4_inode_ref *inode_ref,
 }
 
 /**
+ * @brief The extra space of an inode beyond the first 128 bytes, if there is
+ *        room after it for attributes: the xattr header starts there and has
+ *        to fit into the inode. A damaged inode's i_extra_isize (up to 65535)
+ *        would otherwise put the header, and the attributes, past the end of
+ *        the inode, and clearing the space for the first attribute would
+ *        compute a negative (huge) size. Such an inode, like one without extra
+ *        space, has no room for attributes: they go to the xattr block.
+ *
+ * @param inode_ref Inode reference
+ *
+ * @return i_extra_isize, or 0 if the inode has no room for attributes
+ */
+static size_t ext4_xattr_extra_isize(struct ext4_inode_ref *inode_ref)
+{
+	struct ext4_sblock *sb = &inode_ref->fs->sb;
+	size_t inode_size = ext4_get16(sb, inode_size);
+	size_t extra_isize = ext4_inode_get_extra_isize(sb, inode_ref->inode);
+
+	if (extra_isize % 4 ||
+	    EXT4_GOOD_OLD_INODE_SIZE + extra_isize +
+		    sizeof(struct ext4_xattr_ibody_header) > inode_size)
+		return 0;
+	return extra_isize;
+}
+
+/**
  * @brief Check whether the inode buffer's content is valid
  *
  * @param inode_ref Inode reference
@@ -655,8 +681,7 @@ static void ext4_xattr_ibody_initialize(struct ext4_inode_ref *inode_ref)
 {
 	struct ext4_xattr_ibody_header *header;
 	struct ext4_fs *fs = inode_ref->fs;
-	size_t extra_isize =
-	    ext4_inode_get_extra_isize(&fs->sb, inode_ref->inode);
+	size_t extra_isize = ext4_xattr_extra_isize(inode_ref);
 	size_t inode_size = ext4_get16(&fs->sb, inode_size);
 	if (!extra_isize)
 		return;
@@ -767,8 +792,7 @@ static int ext4_xattr_ibody_find_entry(struct ext4_inode_ref *inode_ref,
 {
 	struct ext4_fs *fs = inode_ref->fs;
 	struct ext4_xattr_ibody_header *iheader;
-	size_t extra_isize =
-	    ext4_inode_get_extra_isize(&fs->sb, inode_ref->inode);
+	size_t extra_isize = ext4_xattr_extra_isize(inode_ref);
 	size_t inode_size = ext4_get16(&fs->sb, inode_size);
 
 	/* Initialize the caller-given finder */
@@ -878,8 +902,7 @@ int ext4_xattr_list(struct ext4_inode_ref *inode_ref,
 	size_t buf_len = 0;
 	struct ext4_fs *fs = inode_ref->fs;
 	struct ext4_xattr_ibody_header *iheader;
-	size_t extra_isize =
-	    ext4_inode_get_extra_isize(&fs->sb, inode_ref->inode);
+	size_t extra_isize = ext4_xattr_extra_isize(inode_ref);
 	struct ext4_block block;
 	bool block_loaded = false;
 	ext4_fsblk_t xattr_block = 0;
@@ -1520,8 +1543,7 @@ int ext4_xattr_set(struct ext4_inode_ref *inode_ref, uint8_t name_index,
 	struct ext4_xattr_info i;
 	bool block_found = false;
 	ext4_fsblk_t orig_xattr_block;
-	size_t extra_isize =
-	    ext4_inode_get_extra_isize(&fs->sb, inode_ref->inode);
+	size_t extra_isize = ext4_xattr_extra_isize(inode_ref);
 
 	i.name_index = name_index;
 	i.name = name;
