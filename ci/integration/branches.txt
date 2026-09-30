@@ -81,6 +81,7 @@ fix/journal-checkpoint-io-error           # not yet submitted upstream: keep jou
 fix/journal-recover-io-error              # not yet submitted upstream: ext4_recover reports replay errors (fork #54, on #153 and #114)
 fix/readlink-nested-lock                  # not yet submitted upstream: ext4_readlink locks the mount point once (fork #56)
 fix/bdif-ph-bbuf-lock                     # not yet submitted upstream: physical block buffer only under the interface lock (fork #57)
+fix/symlink-slow-direct-write             # not yet submitted upstream: slow symlink block written to the device, corrects #131 (fork #60, on #131)
 fix/xattr-get-no-ibody-header             # not yet submitted upstream: no in-inode xattr header means no attributes (fork #58, on #130)
 tests/mt-stress                           # not yet submitted upstream: multi-thread stress test and TSan CI job, #79 #83 (fork #59)
 am/release                                # fork only: integration/release pipeline, fork README
