@@ -7,7 +7,9 @@
 #  - the Debian dependency commands in README.md are the ones the
 #    acceptance-debian container installs,
 #  - the files and directories README.md's "Project tree" lists exist,
-#  - every Makefile target README.md mentions exists.
+#  - every Makefile target README.md mentions exists,
+#  - every example in examples/ is linked from README.md's "Getting
+#    started" and from examples/README.md.
 set -eu
 . "$(dirname "$0")/lib.sh"
 
@@ -71,6 +73,26 @@ for target in $(cat "$WORK/readme-targets.txt"); do
 	grep -Fqx -- "$target" "$WORK/targets.txt" ||
 		die "README.md mentions 'make $target', which the Makefile does not have"
 	pass "Makefile has target $target"
+done
+
+step "examples linked from README.md and examples/README.md"
+# Link targets ([text](target)) of the "Getting started" section of
+# README.md (up to the next underlined heading) and of examples/README.md.
+# check-docs.py (Examples workflow) checks that relative targets exist.
+awk '/^Getting started$/ { on = 1; next }
+	on && /^=+$/ { if (seen) exit; seen = 1; next }
+	on { print prev } { prev = $0 }' "$TOP_DIR/README.md" |
+	grep -o '](\([^)]*\))' | sed 's/^](//; s/)$//' >"$WORK/started-links.txt"
+grep -o '](\([^)]*\))' "$TOP_DIR/examples/README.md" |
+	sed 's/^](//; s/)$//' >"$WORK/examples-links.txt"
+[ -s "$WORK/started-links.txt" ] || die "no links in README.md's Getting started"
+for dir in "$TOP_DIR"/examples/*/; do
+	name=$(basename "$dir")
+	grep -Eq "(^|/)examples/$name(/|\$)" "$WORK/started-links.txt" ||
+		die "README.md's Getting started does not link examples/$name"
+	grep -Eq "^$name(/|\$)|/examples/$name(/|\$)" "$WORK/examples-links.txt" ||
+		die "examples/README.md does not link $name"
+	pass "examples/$name is linked from README.md's Getting started and examples/README.md"
 done
 
 step "ci/run.sh jobs named in README.md"

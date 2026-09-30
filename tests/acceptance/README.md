@@ -37,7 +37,7 @@ below or the table names a block that no longer exists.
 | [lwext4_acceptance.c](lwext4_acceptance.c) | `lwext4-acceptance`: runs a script of lwext4 API calls, with power loss injection and block I/O counters |
 | [lib.sh](lib.sh) | helpers: e2fsck/debugfs oracles, test data pattern |
 | [readme-blocks.sh](readme-blocks.sh) | extracts and runs README.md code blocks |
-| [test-docs.sh](test-docs.sh) | README.md vs. repository (blocks, Debian packages, project tree, make targets) |
+| [test-docs.sh](test-docs.sh) | README.md vs. repository (blocks, Debian packages, project tree, make targets, example links) |
 | [test-readme-native.sh](test-readme-native.sh) | README.md commands in order, results checked by e2fsprogs |
 | [test-features.sh](test-features.sh) | feature claims, both directions of e2fsprogs interoperability |
 | [test-journal.sh](test-journal.sh) | journal replay, power loss at every block write, cache modes |

@@ -104,6 +104,11 @@ More examples:
   devices for SPI flash partitions and SD cards, and an example firmware
   that CI runs in Espressif's QEMU:
   [examples/esp-idf in antimatter-studios/lwext4](https://github.com/antimatter-studios/lwext4/tree/integration/examples/esp-idf).
+* Bare metal on microcontroller boards (ST NUCLEO-F401RE, NUCLEO-G071RB,
+  NUCLEO-L552ZE-Q, Nordic nRF52840 DK) with a micro SD card on SPI, no
+  vendor SDK or RTOS: a firmware that CI runs on the emulated boards in
+  Renode, power cuts included:
+  [examples/baremetal-sdcard](examples/baremetal-sdcard/README.md).
 * [fs_test/](fs_test) - the `lwext4-generic`, `lwext4-mkfs` and
   `lwext4-mbr` tools (see below) are complete programs too.
 
