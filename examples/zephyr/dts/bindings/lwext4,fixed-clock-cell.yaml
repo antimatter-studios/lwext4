@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: BSD-3-Clause
+
+description: |
+  A fixed rate clock that its consumers reference with one clock specifier
+  cell (clk_id), which is ignored. Zephyr's "fixed-clock" has no cells, but
+  the arm,pl022 SPI driver expects a clk_id cell in its clocks property.
+  Implemented by examples/zephyr/drivers/fixed_clock_cell.c.
+
+compatible: "lwext4,fixed-clock-cell"
+
+include: [base.yaml, clock-controller.yaml]
+
+properties:
+  clock-frequency:
+    type: int
+    required: true
+    description: output clock frequency (Hz)
+
+  "#clock-cells":
+    const: 1
+
+clock-cells:
+  - clk_id

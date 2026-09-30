@@ -1,0 +1,19 @@
+diff --git a/drivers/sdhc/sdhc_spi.c b/drivers/sdhc/sdhc_spi.c
+index 4ca33948..428eac1e 100644
+--- a/drivers/sdhc/sdhc_spi.c
++++ b/drivers/sdhc/sdhc_spi.c
+@@ -580,6 +580,14 @@ static int sdhc_spi_write_data(const struct device *dev, struct sdhc_data *data)
+ 		token = SD_SPI_TOKEN_SINGLE;
+ 	}
+ 
++	/* Nwr: the card needs at least one byte of clocks between its R1
++	 * response and the first start block token
++	 */
++	ret = sdhc_spi_rx(config->spi_dev, dev_data->spi_cfg, &resp, sizeof(resp));
++	if (ret) {
++		return ret;
++	}
++
+ 	while (remaining--) {
+ 		/* Build the CRC for this data block */
+ 		sys_put_be16(crc16_itu_t(0, write_location, data->block_size),

@@ -1,0 +1,54 @@
+# SPDX-License-Identifier: BSD-3-Clause
+#
+# lwext4 as a Zephyr module: the examples/zephyr application is built with
+# west for a QEMU board (the artifacts are the images west produced), then
+# booted in QEMU with a blank SD card image, which the firmware formats and
+# fills; e2fsck -fn and debugfs check the card image afterwards. See
+# examples/zephyr/README.md.
+#
+# Every step is `ci/run.sh <job>` (containers from ci/envs/), so a failing
+# job reproduces locally with only docker installed. All jobs are required.
+name: Zephyr
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  qemu:
+    name: qemu / ${{ matrix.board }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        board:
+          - qemu_cortex_m3   # TI LM3S6965, Cortex-M3, 64 KiB RAM, SD card on SPI
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and run in QEMU
+        run: ci/run.sh zephyr-qemu ${{ matrix.board }}
+
+      - name: Upload firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: lwext4-zephyr-example-${{ matrix.board }}
+          path: examples/zephyr/dist/${{ matrix.board }}
+          if-no-files-found: error
+
+      - name: Upload QEMU log and card image
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: zephyr-qemu-test-${{ matrix.board }}
+          path: examples/zephyr/build-${{ matrix.board }}/qemu-test
+          if-no-files-found: ignore

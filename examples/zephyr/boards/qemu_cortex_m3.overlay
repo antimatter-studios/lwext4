@@ -1,0 +1,57 @@
+/*
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
+ * qemu_cortex_m3 is QEMU's lm3s6965evb machine: the TI Stellaris LM3S6965
+ * evaluation board. QEMU models the board's microSD socket: an SD card in
+ * SPI mode on the SSI0 controller (an ARM PL022) at 0x40008000, with the
+ * card's chip select on GPIO port D pin 0. Attach a card image with
+ *   qemu-system-arm ... -drive if=sd,format=raw,file=card.img
+ * The Zephyr board describes neither the SSI controller nor the socket;
+ * this overlay adds both, and the card appears as disk "SD" of the disk
+ * access API.
+ */
+#include <zephyr/dt-bindings/gpio/gpio.h>
+
+/ {
+	/*
+	 * The system clock again, as a clock the SSI can reference: the
+	 * PL022 driver asks the clock control API for its input clock rate,
+	 * with a clock specifier of one cell, which the board's "fixed-clock"
+	 * sysclk node cannot take. See drivers/fixed_clock_cell.c.
+	 */
+	ssi_clk: ssi-clock {
+		compatible = "lwext4,fixed-clock-cell";
+		clock-frequency = <12000000>;
+		#clock-cells = <1>;
+	};
+
+	soc {
+		ssi0: spi@40008000 {
+			compatible = "arm,pl022";
+			reg = <0x40008000 0x1000>;
+			interrupts = <7 3>;
+			clocks = <&ssi_clk 0>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			/* SD card chip select: PD0, active low */
+			cs-gpios = <&gpio3 0 GPIO_ACTIVE_LOW>;
+			status = "okay";
+
+			sdhc0: sdhc@0 {
+				/* Zephyr's SD host controller on a SPI bus */
+				compatible = "zephyr,sdhc-spi-slot";
+				reg = <0>;
+				/* the SSI runs at up to half its 12 MHz clock */
+				spi-max-frequency = <6000000>;
+				status = "okay";
+
+				mmc {
+					/* the card, as disk "SD" */
+					compatible = "zephyr,sdmmc-disk";
+					disk-name = "SD";
+					status = "okay";
+				};
+			};
+		};
+	};
+};

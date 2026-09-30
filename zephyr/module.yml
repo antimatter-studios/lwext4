@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: BSD-3-Clause
+#
+# Makes this repository a Zephyr module: list it in a west manifest, or pass
+# its path in ZEPHYR_EXTRA_MODULES, and enable CONFIG_LWEXT4 in prj.conf.
+# The build glue lives in ports/zephyr (see ports/zephyr/README.md and
+# examples/zephyr).
+name: lwext4
+build:
+  cmake: ports/zephyr
+  kconfig: ports/zephyr/Kconfig
