@@ -85,6 +85,44 @@ static int ext4_bdif_bwrite(struct ext4_blockdev *bdev, const void *buf,
 	return r;
 }
 
+/**@brief   Write part of one physical block: read it into the physical
+ *          block buffer, change it there and write it back. The buffer
+ *          belongs to the interface and is shared by all partitions on
+ *          it, so it is used under the interface lock from the read to
+ *          the write.*/
+static int ext4_bdif_write_part(struct ext4_blockdev *bdev, uint64_t blk_id,
+				uint32_t off, const void *buf, uint32_t len)
+{
+	struct ext4_blockdev_iface *bdif = bdev->bdif;
+
+	ext4_bdif_lock(bdev);
+	int r = bdif->bread(bdev, bdif->ph_bbuf, blk_id, 1);
+	bdif->bread_ctr++;
+	if (r == EOK) {
+		memcpy(bdif->ph_bbuf + off, buf, len);
+		r = bdif->bwrite(bdev, bdif->ph_bbuf, blk_id, 1);
+		bdif->bwrite_ctr++;
+	}
+	ext4_bdif_unlock(bdev);
+	return r;
+}
+
+/**@brief   Read part of one physical block through the physical block
+ *          buffer, under the interface lock (see ext4_bdif_write_part).*/
+static int ext4_bdif_read_part(struct ext4_blockdev *bdev, uint64_t blk_id,
+			       uint32_t off, void *buf, uint32_t len)
+{
+	struct ext4_blockdev_iface *bdif = bdev->bdif;
+
+	ext4_bdif_lock(bdev);
+	int r = bdif->bread(bdev, bdif->ph_bbuf, blk_id, 1);
+	bdif->bread_ctr++;
+	if (r == EOK)
+		memcpy(buf, bdif->ph_bbuf + off, len);
+	ext4_bdif_unlock(bdev);
+	return r;
+}
+
 int ext4_block_init(struct ext4_blockdev *bdev)
 {
 	int rc;
@@ -334,12 +372,7 @@ int ext4_block_writebytes(struct ext4_blockdev *bdev, uint64_t off,
 				    ? len
 				    : (bdev->bdif->ph_bsize - unalg);
 
-		r = ext4_bdif_bread(bdev, bdev->bdif->ph_bbuf, block_idx, 1);
-		if (r != EOK)
-			return r;
-
-		memcpy(bdev->bdif->ph_bbuf + unalg, p, wlen);
-		r = ext4_bdif_bwrite(bdev, bdev->bdif->ph_bbuf, block_idx, 1);
+		r = ext4_bdif_write_part(bdev, block_idx, unalg, p, wlen);
 		if (r != EOK)
 			return r;
 
@@ -363,12 +396,7 @@ int ext4_block_writebytes(struct ext4_blockdev *bdev, uint64_t off,
 
 	/*Rest of the data*/
 	if (len) {
-		r = ext4_bdif_bread(bdev, bdev->bdif->ph_bbuf, block_idx, 1);
-		if (r != EOK)
-			return r;
-
-		memcpy(bdev->bdif->ph_bbuf, p, len);
-		r = ext4_bdif_bwrite(bdev, bdev->bdif->ph_bbuf, block_idx, 1);
+		r = ext4_bdif_write_part(bdev, block_idx, 0, p, len);
 		if (r != EOK)
 			return r;
 	}
@@ -404,11 +432,9 @@ int ext4_block_readbytes(struct ext4_blockdev *bdev, uint64_t off, void *buf,
 				    ? len
 				    : (bdev->bdif->ph_bsize - unalg);
 
-		r = ext4_bdif_bread(bdev, bdev->bdif->ph_bbuf, block_idx, 1);
+		r = ext4_bdif_read_part(bdev, block_idx, unalg, p, rlen);
 		if (r != EOK)
 			return r;
-
-		memcpy(p, bdev->bdif->ph_bbuf + unalg, rlen);
 
 		p += rlen;
 		len -= rlen;
@@ -431,11 +457,9 @@ int ext4_block_readbytes(struct ext4_blockdev *bdev, uint64_t off, void *buf,
 
 	/*Rest of the data*/
 	if (len) {
-		r = ext4_bdif_bread(bdev, bdev->bdif->ph_bbuf, block_idx, 1);
+		r = ext4_bdif_read_part(bdev, block_idx, 0, p, len);
 		if (r != EOK)
 			return r;
-
-		memcpy(p, bdev->bdif->ph_bbuf, len);
 	}
 
 	return r;
