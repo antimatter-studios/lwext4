@@ -109,6 +109,10 @@ More examples:
   vendor SDK or RTOS: a firmware that CI runs on the emulated boards in
   Renode, power cuts included:
   [examples/baremetal-sdcard](examples/baremetal-sdcard/README.md).
+* Zephyr RTOS: lwext4 as a Zephyr module with a block device on Zephyr's
+  disk access API, and an example application that CI runs in QEMU on a
+  Cortex-M3 board with a RAM disk:
+  [examples/zephyr](examples/zephyr/README.md).
 * [fs_test/](fs_test) - the `lwext4-generic`, `lwext4-mkfs` and
   `lwext4-mbr` tools (see below) are complete programs too.
 
