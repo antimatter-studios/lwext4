@@ -2554,6 +2554,7 @@ static int ext4_fsymlink_set(ext4_file *f, const void *buf, uint32_t size)
 		ext4_inode_clear_flag(ref.inode, EXT4_INODE_FLAG_EXTENTS);
 	} else {
 		struct ext4_block b;
+		int rs;
 
 		ext4_fs_inode_blocks_init(&f->mp->fs, &ref);
 		r = ext4_fs_append_inode_dblk(&ref, &fblock, &sblock);
@@ -2561,15 +2562,27 @@ static int ext4_fsymlink_set(ext4_file *f, const void *buf, uint32_t size)
 			goto Finish;
 
 		/* Zero the rest of the block: it may have been used before and
-		 * the target has to be NUL terminated within the block. */
-		r = ext4_trans_block_get_noread(f->mp->fs.bdev, &b, fblock);
+		 * the target has to be NUL terminated within the block. The
+		 * block is built in a cache buffer but written to the device
+		 * at once, like file data (ext4_fwrite): ext4_readlink() reads
+		 * it from the device through ext4_fread(), which does not look
+		 * into the cache, so a dirty copy there would read back as the
+		 * old contents while write-back mode keeps it unwritten. */
+		r = ext4_block_get_noread(f->mp->fs.bdev, &b, fblock);
 		if (r != EOK)
 			goto Finish;
 
 		memset(b.data, 0, block_size);
 		memcpy(b.data, buf, size);
-		ext4_trans_set_block_dirty(b.buf);
-		r = ext4_block_set(f->mp->fs.bdev, &b);
+		r = ext4_blocks_set_direct(f->mp->fs.bdev, b.data, fblock, 1);
+		if (r == EOK)
+			ext4_bcache_set_flag(b.buf, BC_UPTODATE);
+		else
+			ext4_bcache_invalidate_buf(f->mp->fs.bdev->bc, b.buf);
+
+		rs = ext4_block_set(f->mp->fs.bdev, &b);
+		if (r == EOK)
+			r = rs;
 		if (r != EOK)
 			goto Finish;
 	}
