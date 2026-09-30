@@ -3,9 +3,9 @@
 #
 # Runs README.md's own commands, in README order, on the build host, and
 # checks their results with e2fsprogs:
-#   Compile & install tools, lwext4-generic demo application, Run automatic
-#   tests (make test, make test_all), Using lwext4-mkfs tool, Run regression
-#   tests (native part).
+#   Getting started, Compile & install tools, Using the installed library,
+#   lwext4-generic demo application, Run automatic tests (make test, make
+#   test_all), Using lwext4-mkfs tool, Run regression tests (native part).
 set -eu
 . "$(dirname "$0")/lib.sh"
 
@@ -31,6 +31,16 @@ check_generic_output()
 	pass "debugfs reads back what lwext4-generic wrote to $img"
 }
 
+step "Getting started"
+$blocks run getting-started#1
+# Step 2 runs in build_generic, where step 1 left the reader.
+rm -f build_generic/disk.img
+README_BLOCK_DIR="$TOP_DIR/build_generic" $blocks run getting-started#2
+fsck_clean build_generic/disk.img "the basic example's image"
+[ -n "$(dir_names build_generic/disk.img /docs)" ] ||
+	die "the basic example wrote nothing to /docs"
+pass "the basic example writes /docs: $(dir_names build_generic/disk.img /docs | tr '\n' ' ')"
+
 step "Compile & install tools"
 $blocks run compile-install-tools#1
 for tool in lwext4-generic lwext4-mkfs lwext4-mbr lwext4-server lwext4-client; do
@@ -40,6 +50,65 @@ for tool in lwext4-generic lwext4-mkfs lwext4-mbr lwext4-server lwext4-client; d
 		die "installed $tool does not run"
 done
 pass "make install installs lwext4-generic, -mkfs, -mbr, -server and -client"
+
+step "Using the installed library"
+prefix="$README_DESTDIR/usr/local"
+# The layout block: "<dir>/  <file>, <file>, ..." or "<file>  <description>";
+# every file name in it (parenthesised alternatives aside) must be installed.
+sh "$ACC_DIR/readme-blocks.sh" show using-the-installed-library#1 |
+	sed 's/([^)]*)//g; s/,/ /g' | while read -r first rest; do
+	case "$first" in
+	*/) for name in $rest; do
+		case "$name" in
+		*.*[a-z]) [ -e "$prefix/$first$name" ] ||
+			die "make install did not install $first$name" ;;
+		esac
+	    done ;;
+	*) [ -e "$prefix/$first" ] || die "make install did not install $first" ;;
+	esac
+done
+pass "make install installs the layout README.md shows"
+# The build commands, each on its own, with app.c a program using the
+# installed headers and libraries (tests/package/consumer.c).
+app="$WORK/app"
+rm -rf "$app"
+mkdir -p "$app"
+cp tests/package/consumer.c "$app/app.c"
+sh "$ACC_DIR/readme-blocks.sh" show using-the-installed-library#2 >"$WORK/cc.txt"
+while read -r cmd; do
+	rm -f "$app/a.out" "$app/app.img"
+	(cd "$app" && PREFIX="$prefix" PKG_CONFIG_PATH="$prefix/lib/pkgconfig" \
+		bash -exc "$cmd") || die "does not build: $cmd"
+	"$app/a.out" "$app/app.img" || die "the program built with '$cmd' fails"
+	fsck_clean "$app/app.img" "image written by the program built with '$cmd'"
+done <"$WORK/cc.txt"
+# The CMake block, in a project that adds the target "app".
+mkdir -p "$app/cmake"
+{
+	echo 'cmake_minimum_required(VERSION 3.10)'
+	echo 'project(app C)'
+	echo 'add_executable(app ../app.c)'
+	sh "$ACC_DIR/readme-blocks.sh" show using-the-installed-library#3
+} >"$app/cmake/CMakeLists.txt"
+cmake -S "$app/cmake" -B "$app/cmake/build" -DCMAKE_PREFIX_PATH="$prefix" \
+	>"$WORK/cmake-app.log" 2>&1 &&
+	cmake --build "$app/cmake/build" >>"$WORK/cmake-app.log" 2>&1 ||
+	{ cat "$WORK/cmake-app.log"; die "the CMake block does not build"; }
+rm -f "$app/app.img"
+"$app/cmake/build/app" "$app/app.img" || die "the program built with CMake fails"
+fsck_clean "$app/app.img" "image written by the program built with CMake"
+pass "programs built with pkg-config, -I/-L and find_package(lwext4) work"
+
+step "Compile & install tools: another prefix"
+home="$WORK/home"
+rm -rf "$home"
+mkdir -p "$home"
+HOME="$home" $blocks run compile-install-tools#2
+for f in bin/lwext4-mkfs bin/lwext4-generic lib/liblwext4.a \
+	 include/lwext4/ext4.h lib/pkgconfig/lwext4.pc; do
+	[ -e "$home/.local/$f" ] || die "cmake --install --prefix did not install $f"
+done
+pass "cmake --install --prefix \$HOME/.local installs below \$HOME/.local"
 
 step "Run automatic tests: make test"
 $blocks run run-automatic-tests#1

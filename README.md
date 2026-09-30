@@ -104,6 +104,15 @@ More examples:
   devices for SPI flash partitions and SD cards, and an example firmware
   that CI runs in Espressif's QEMU:
   [examples/esp-idf in antimatter-studios/lwext4](https://github.com/antimatter-studios/lwext4/tree/integration/examples/esp-idf).
+* Bare metal on microcontroller boards (ST NUCLEO-F401RE, NUCLEO-G071RB,
+  NUCLEO-L552ZE-Q, Nordic nRF52840 DK) with a micro SD card on SPI, no
+  vendor SDK or RTOS: a firmware that CI runs on the emulated boards in
+  Renode, power cuts included:
+  [examples/baremetal-sdcard](examples/baremetal-sdcard/README.md).
+* Zephyr RTOS: lwext4 as a Zephyr module with a block device on Zephyr's
+  disk access API, and an example application that CI runs in QEMU on a
+  Cortex-M3 board with a RAM disk:
+  [examples/zephyr](examples/zephyr/README.md).
 * [fs_test/](fs_test) - the `lwext4-generic`, `lwext4-mkfs` and
   `lwext4-mbr` tools (see below) are complete programs too.
 
@@ -314,7 +323,8 @@ Run regression tests
 
 Small self-contained tests live in `tests/` and run through CTest. They need
 `mke2fs` (e2fsprogs), `sfdisk` (util-linux) and `python3` on the host to
-build their images; no root access is required:
+build their images, and `pkg-config` for `install_package`; no root access
+is required:
 ```bash
  make generic
  cd build_generic
