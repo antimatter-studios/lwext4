@@ -1,0 +1,56 @@
+# SPDX-License-Identifier: BSD-3-Clause
+#
+# lwext4 as a Zephyr module: the examples/zephyr application is built with
+# west for a QEMU board (the artifacts are the images west produced), then
+# booted in QEMU; the firmware formats and fills its RAM disk, which is
+# copied out of QEMU's memory and checked with e2fsck -fn and debugfs. See
+# examples/zephyr/README.md.
+#
+# Every step is `ci/run.sh <job>` (containers from ci/envs/), so a failing
+# job reproduces locally with only docker installed. All jobs are required.
+name: Zephyr
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  qemu:
+    name: qemu / ${{ matrix.board }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Arm MPS2, Cortex-M3, 4 MiB SRAM, 2 MiB of it a RAM disk
+          - board: mps2/an385
+            name: mps2_an385
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and run in QEMU
+        run: ci/run.sh zephyr-qemu ${{ matrix.board }}
+
+      - name: Upload firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: lwext4-zephyr-example-${{ matrix.name }}
+          path: examples/zephyr/dist/${{ matrix.name }}
+          if-no-files-found: error
+
+      - name: Upload QEMU log and disk image
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: zephyr-qemu-test-${{ matrix.name }}
+          path: examples/zephyr/build-${{ matrix.name }}/qemu-test
+          if-no-files-found: ignore

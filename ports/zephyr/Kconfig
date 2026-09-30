@@ -1,0 +1,124 @@
+# SPDX-License-Identifier: BSD-3-Clause
+#
+# lwext4 options (menuconfig: Modules -> lwext4). They are mapped onto
+# lwext4's own CONFIG_* switches by include/generated/ext4_config.h.
+
+menuconfig LWEXT4
+	bool "lwext4 ext2/ext3/ext4 file system library"
+	help
+	  lwext4: format, mount, read and write ext2/ext3/ext4 file systems
+	  through its own API (ext4_fopen(), ext4_dir_mk(), ...) on any block
+	  device, e.g. a disk of the disk access API (LWEXT4_DISK_ACCESS).
+	  lwext4 allocates its block cache and journal records with malloc(),
+	  so the C library needs a heap.
+
+if LWEXT4
+
+choice LWEXT4_FEATURE_SET
+	prompt "Supported file system feature set"
+	default LWEXT4_FEATURE_SET_EXT4
+	help
+	  Highest ext feature level lwext4 accepts when mounting. File
+	  systems using incompatible features beyond this level are refused.
+
+config LWEXT4_FEATURE_SET_EXT2
+	bool "ext2"
+
+config LWEXT4_FEATURE_SET_EXT3
+	bool "ext3"
+
+config LWEXT4_FEATURE_SET_EXT4
+	bool "ext4"
+
+endchoice
+
+config LWEXT4_JOURNALING
+	bool "Journaling (ext3/ext4 jbd2 journal)"
+	default y
+	help
+	  Journal replay (ext4_recover()) and journalled transactions
+	  (ext4_journal_start()/ext4_journal_stop()). Strongly recommended on
+	  media that can lose power in the middle of a write.
+
+config LWEXT4_EXTENTS
+	bool "Extents"
+	default y
+	help
+	  Needed to read and write files on ext4 file systems that use
+	  extents (the mke2fs default for ext4). Compiles in
+	  src/ext4_extent.c, which is licensed GPLv2 (the rest of lwext4 is
+	  BSD-3-Clause).
+
+config LWEXT4_XATTR
+	bool "Extended attributes"
+	default y
+	help
+	  Compiles in src/ext4_xattr.c, which is licensed GPLv2 (the rest of
+	  lwext4 is BSD-3-Clause).
+
+config LWEXT4_CACHE_SIZE
+	int "Block cache size (blocks)"
+	range 4 1024
+	default 8
+	help
+	  Number of file system blocks kept in lwext4's block cache. Each
+	  entry costs one file system block of heap (1 KiB - 4 KiB) plus some
+	  bookkeeping. Blocks the journal still references stay in the cache
+	  beyond this number until they are written back.
+
+config LWEXT4_BLOCKDEVS_COUNT
+	int "Maximum number of registered block devices"
+	range 1 16
+	default 2
+
+config LWEXT4_MOUNTPOINTS_COUNT
+	int "Maximum number of mount points"
+	range 1 16
+	default 2
+
+config LWEXT4_MAX_NAME
+	int "Maximum block device and mount point name length"
+	range 8 128
+	default 32
+
+config LWEXT4_MAX_TRUNCATE_SIZE
+	int "Maximum single truncate step (bytes)"
+	default 16777216
+	help
+	  Large truncates are split into steps of this size so that a single
+	  transaction does not need unbounded memory.
+
+config LWEXT4_BLOCKDEV_STATS
+	bool "Block device read/write counters"
+
+config LWEXT4_DEBUG_PRINTF
+	bool "Debug messages"
+	help
+	  Compile in lwext4's debug messages (printf). They are still
+	  filtered at run time with ext4_dmask_set(). Costs a lot of flash.
+
+config LWEXT4_DEBUG_ASSERT
+	bool "Internal assertions"
+	help
+	  lwext4's internal consistency checks, reported through the C
+	  library's assert(), which stops the system with a fatal error.
+
+config LWEXT4_DISK_ACCESS
+	bool "Block device on the disk access API"
+	default y
+	depends on DISK_ACCESS
+	help
+	  ext4_zephyr_disk_init() (ext4_zephyr.h): an lwext4 block device on a
+	  disk of Zephyr's disk access API, e.g. an SD card
+	  (zephyr,sdmmc-disk), eMMC, NVMe, a RAM disk (zephyr,ram-disk) or a
+	  flash disk.
+
+config LWEXT4_DISK_MAX_SECTOR_SIZE
+	int "Largest disk sector size supported (bytes)"
+	default 512
+	depends on LWEXT4_DISK_ACCESS
+	help
+	  Size of the one sector buffer each block device keeps for lwext4's
+	  partial block accesses. Disks with larger sectors are refused.
+
+endif # LWEXT4
