@@ -121,8 +121,37 @@ jobs:
           path: build-ci/dist/
           if-no-files-found: error
 
+  # Zephyr example firmware (examples/zephyr): built with west and tested
+  # in QEMU per board, flashable images per board.
+  package-zephyr:
+    name: package / zephyr ${{ matrix.board }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {board: mps2/an385, name: mps2_an385}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - run: ci/run.sh zephyr-qemu ${{ matrix.board }}
+      - name: Package flashable images
+        run: |
+          name="lwext4-$(git describe --tags --always | sed 's/^v//')-zephyr-${{ matrix.name }}"
+          mkdir -p build-ci/dist "build-ci/pkg/$name"
+          cp -a "examples/zephyr/dist/${{ matrix.name }}/." "build-ci/pkg/$name/"
+          cp LICENSE "build-ci/pkg/$name/"
+          tar -C build-ci/pkg -czf "build-ci/dist/$name.tar.gz" "$name"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist-zephyr-${{ matrix.name }}
+          path: build-ci/dist/
+          if-no-files-found: error
+
   publish:
-    needs: [ci, package-linux, package, package-esp32, package-baremetal-sdcard]
+    needs: [ci, package-linux, package, package-esp32, package-baremetal-sdcard, package-zephyr]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:

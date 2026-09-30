@@ -15,8 +15,9 @@
 >   after upstream `v1.0.0`, before a future upstream `v1.0.1`, and counts
 >   our builds with `am.<n>`. A tag runs the whole CI matrix, builds the
 >   packages (Linux x86_64/arm64/armhf/i686/riscv64/ppc64le/s390x/powerpc/
->   mips, Windows x86_64, Cortex-M, ESP32/ESP32-C3/ESP32-S3 example
->   firmware) and publishes them, with test results
+>   mips, Windows x86_64, Cortex-M; example firmware for ESP32/ESP32-C3/
+>   ESP32-S3, the bare-metal SD card boards and Zephyr on mps2/an385) and
+>   publishes them, with test results
 >   and a manifest of the included branches, only if every job passed.
 > - **Licensing** is unchanged: the library is BSD-3-Clause
 >   ([LICENSE](LICENSE)) except `src/ext4_extent.c` and `src/ext4_xattr.c`,
