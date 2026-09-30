@@ -1,0 +1,67 @@
+# SPDX-License-Identifier: BSD-3-Clause
+name: ESP-IDF
+
+# Real ESP-IDF firmware (bootloader, partition table, FreeRTOS app, SPI flash
+# and SD/MMC drivers) built with idf.py and run in Espressif's QEMU. Every
+# step runs in the ci/envs/esp-idf container: `ci/run.sh <job>` is exactly
+# what a developer runs locally.
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  qemu:
+    name: qemu / ${{ matrix.target }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [esp32, esp32c3, esp32s3]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run in QEMU
+        run: ci/run.sh esp32-qemu ${{ matrix.target }}
+      - name: Upload flashable firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: lwext4-example-${{ matrix.target }}
+          path: examples/esp-idf/dist/${{ matrix.target }}
+          if-no-files-found: error
+      - name: Upload QEMU logs and disk images
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: qemu-test-${{ matrix.target }}
+          path: examples/esp-idf/build-${{ matrix.target }}/qemu-test
+          if-no-files-found: ignore
+
+  # SD card on a SPI bus (micro SD modules). QEMU has no general purpose SPI
+  # controller model, so these images are built for real boards only.
+  sdspi:
+    name: build / ${{ matrix.target }}-sdspi
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [esp32, esp32c3, esp32s3]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: ci/run.sh esp32-build ${{ matrix.target }} sdspi
+      - name: Upload flashable firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: lwext4-example-${{ matrix.target }}-sdspi
+          path: examples/esp-idf/dist/${{ matrix.target }}-sdspi
+          if-no-files-found: error
