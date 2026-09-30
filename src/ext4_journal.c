@@ -1311,14 +1311,18 @@ static void jbd_trans_end_write(struct ext4_bcache *bc __unused,
 			  void *arg);
 
 /*
- * This routine is only suitable to committed transactions. */
-static void jbd_journal_flush_trans(struct jbd_trans *trans)
+ * This routine is only suitable to committed transactions.
+ * Returns the error of the first block that cannot be written; the
+ * transaction then stays on the checkpoint queue. */
+static int jbd_journal_flush_trans(struct jbd_trans *trans)
 {
+	int r = EOK;
 	struct jbd_buf *jbd_buf, *tmp;
 	struct jbd_journal *journal = trans->journal;
 	struct ext4_fs *fs = journal->jbd_fs->inode_ref.fs;
 	void *tmp_data = ext4_malloc(journal->block_size);
-	ext4_assert(tmp_data);
+	if (!tmp_data)
+		return ENOMEM;
 
 	TAILQ_FOREACH_SAFE(jbd_buf, &trans->buf_queue, buf_node,
 			tmp) {
@@ -1329,26 +1333,31 @@ static void jbd_journal_flush_trans(struct jbd_trans *trans)
 					   jbd_buf->block_rec->lba);
 		if (!(buf && ext4_bcache_test_flag(buf, BC_UPTODATE) &&
 		      jbd_buf->block_rec->trans == trans)) {
-			int r;
 			struct ext4_block jbd_block = EXT4_BLOCK_ZERO();
 			r = jbd_block_get(journal->jbd_fs,
 						&jbd_block,
 						jbd_buf->jbd_lba);
-			ext4_assert(r == EOK);
-			memcpy(tmp_data, jbd_block.data,
-					journal->block_size);
-			ext4_block_set(fs->bdev, &jbd_block);
-			r = ext4_blocks_set_direct(fs->bdev, tmp_data,
-					jbd_buf->block_rec->lba, 1);
-			jbd_trans_end_write(fs->bdev->bc, buf, r, jbd_buf);
+			if (r == EOK) {
+				memcpy(tmp_data, jbd_block.data,
+						journal->block_size);
+				ext4_block_set(fs->bdev, &jbd_block);
+				r = ext4_blocks_set_direct(fs->bdev, tmp_data,
+						jbd_buf->block_rec->lba, 1);
+				jbd_trans_end_write(fs->bdev->bc, buf, r,
+						jbd_buf);
+			}
 		} else
-			ext4_block_flush_buf(fs->bdev, buf);
+			r = ext4_block_flush_buf(fs->bdev, buf);
 
 		if (buf)
 			ext4_block_set(fs->bdev, &block);
+
+		if (r != EOK)
+			break;
 	}
 
 	ext4_free(tmp_data);
+	return r;
 }
 
 static void
@@ -1364,11 +1373,12 @@ jbd_journal_skip_pure_revoke(struct jbd_journal *journal,
 	jbd_journal_write_sb(journal);
 }
 
-void
+int
 jbd_journal_purge_cp_trans(struct jbd_journal *journal,
 			   bool flush,
 			   bool once)
 {
+	int r;
 	struct jbd_trans *trans;
 	while ((trans = TAILQ_FIRST(&journal->cp_queue))) {
 		if (!trans->data_cnt) {
@@ -1402,12 +1412,16 @@ jbd_journal_purge_cp_trans(struct jbd_journal *journal,
 					trans->trans_id;
 				jbd_journal_write_sb(journal);
 				break;
-			} else
-				jbd_journal_flush_trans(trans);
+			} else {
+				r = jbd_journal_flush_trans(trans);
+				if (r != EOK)
+					return r;
+			}
 		}
 		if (once)
 			break;
 	}
+	return EOK;
 }
 
 /**@brief  Stop accessing the journal.
@@ -1420,8 +1434,11 @@ int jbd_journal_stop(struct jbd_journal *journal)
 	uint32_t features_incompatible;
 
 	/* Make sure that journalled content have reached
-	 * the disk.*/
-	jbd_journal_purge_cp_trans(journal, true, false);
+	 * the disk. If some of it cannot be written, the journal
+	 * still needs to be replayed: keep it marked so.*/
+	r = jbd_journal_purge_cp_trans(journal, true, false);
+	if (r != EOK)
+		return r;
 
 	/* There should be no block record in this journal
 	 * session. */
@@ -1451,24 +1468,29 @@ int jbd_journal_stop(struct jbd_journal *journal)
 /**@brief  Allocate a block in the journal.
  * @param  journal current journal session
  * @param  trans transaction
- * @return allocated block address*/
-static uint32_t jbd_journal_alloc_block(struct jbd_journal *journal,
-					struct jbd_trans *trans)
+ * @param  iblock allocated block address
+ * @return standard error code*/
+static int jbd_journal_alloc_block(struct jbd_journal *journal,
+				   struct jbd_trans *trans,
+				   uint32_t *iblock)
 {
-	uint32_t start_block;
+	int r;
 
-	start_block = journal->last++;
+	*iblock = journal->last++;
 	trans->alloc_blocks++;
 	wrap(&journal->jbd_fs->sb, journal->last);
 	
 	/* If there is no space left, flush just one journalled
-	 * transaction.*/
+	 * transaction. If its blocks cannot be written, it has to
+	 * stay in the journal: there is no room.*/
 	if (journal->last == journal->start) {
-		jbd_journal_purge_cp_trans(journal, true, true);
+		r = jbd_journal_purge_cp_trans(journal, true, true);
+		if (r != EOK)
+			return r;
 		ext4_assert(journal->last != journal->start);
 	}
 
-	return start_block;
+	return EOK;
 }
 
 static struct jbd_block_rec *
@@ -1774,7 +1796,9 @@ static int jbd_trans_write_commit_block(struct jbd_trans *trans)
 	uint32_t commit_iblock;
 	struct jbd_journal *journal = trans->journal;
 
-	commit_iblock = jbd_journal_alloc_block(journal, trans);
+	rc = jbd_journal_alloc_block(journal, trans, &commit_iblock);
+	if (rc != EOK)
+		return rc;
 
 	rc = jbd_block_get_noread(journal->jbd_fs, &block, commit_iblock);
 	if (rc != EOK)
@@ -1896,7 +1920,12 @@ static int jbd_journal_prepare(struct jbd_journal *journal,
 
 again:
 		if (!desc_iblock) {
-			desc_iblock = jbd_journal_alloc_block(journal, trans);
+			rc = jbd_journal_alloc_block(journal, trans,
+						     &desc_iblock);
+			if (rc != EOK) {
+				desc_iblock = 0;
+				break;
+			}
 			rc = jbd_block_get_noread(journal->jbd_fs, &desc_block, desc_iblock);
 			if (rc != EOK)
 				break;
@@ -1949,8 +1978,10 @@ again:
 			goto again;
 		}
 
-		data_iblock = jbd_journal_alloc_block(journal, trans);
-		rc = jbd_block_get_noread(journal->jbd_fs, &data_block, data_iblock);
+		rc = jbd_journal_alloc_block(journal, trans, &data_iblock);
+		if (rc == EOK)
+			rc = jbd_block_get_noread(journal->jbd_fs,
+						  &data_block, data_iblock);
 		if (rc != EOK) {
 			desc_iblock = 0;
 			ext4_bcache_clear_dirty(desc_block.buf);
@@ -2016,7 +2047,12 @@ jbd_journal_prepare_revoke(struct jbd_journal *journal,
 			  tmp) {
 again:
 		if (!desc_iblock) {
-			desc_iblock = jbd_journal_alloc_block(journal, trans);
+			rc = jbd_journal_alloc_block(journal, trans,
+						     &desc_iblock);
+			if (rc != EOK) {
+				desc_iblock = 0;
+				break;
+			}
 			rc = jbd_block_get_noread(journal->jbd_fs, &desc_block,
 						  desc_iblock);
 			if (rc != EOK)
@@ -2108,8 +2144,13 @@ static void jbd_trans_end_write(struct ext4_bcache *bc __unused,
 	struct jbd_journal *journal = trans->journal;
 	bool first_in_queue =
 		trans == TAILQ_FIRST(&journal->cp_queue);
-	if (res != EOK)
+	if (res != EOK) {
+		/* The block has not reached the disk: the transaction
+		 * stays in the journal until a later write of the block
+		 * succeeds (the buffer stays dirty).*/
 		trans->error = res;
+		return;
+	}
 
 	TAILQ_REMOVE(&trans->buf_queue, jbd_buf, buf_node);
 	TAILQ_REMOVE(&block_rec->dirty_buf_queue,
