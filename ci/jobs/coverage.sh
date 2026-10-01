@@ -15,10 +15,13 @@ build=$out/b
 # toolchain/generic.cmake hardcodes "cc" and its CMAKE_C_FLAGS; instrument
 # through the compiler command instead. Debug = -O0, so lines and branches
 # map 1:1 to the source.
+# -fprofile-update=atomic: tests run lwext4 from several threads at once
+# (test_mt_*), and plain counter updates race, which leaves corrupt
+# (negative) counts that gcovr refuses (GCC bug 68080).
 mkdir -p "$out/bin"
 cat >"$out/bin/cc" <<'EOF'
 #!/bin/sh
-exec gcc --coverage "$@"
+exec gcc --coverage -fprofile-update=atomic "$@"
 EOF
 chmod +x "$out/bin/cc"
 export PATH="$PWD/$out/bin:$PATH"
