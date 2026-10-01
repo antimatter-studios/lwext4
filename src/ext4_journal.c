@@ -94,6 +94,9 @@ struct replay_arg {
 
 	/**@brief  Current trans_id we are on.*/
 	uint32_t this_trans_id;
+
+	/**@brief  Error of the first block that could not be replayed.*/
+	int error;
 };
 
 /* Make sure we wrap around the log correctly! */
@@ -300,7 +303,7 @@ static void jbd_commit_csum_set(struct jbd_fs *jbd_fs,
 
 	header->chksum_type = 0;
 	header->chksum_size = 0;
-	header->chksum[0] = jbd_commit_csum(jbd_fs, header);
+	header->chksum[0] = to_be32(jbd_commit_csum(jbd_fs, header));
 }
 
 #if CONFIG_META_CSUM_ENABLE
@@ -333,7 +336,9 @@ static uint32_t jbd_block_csum(struct jbd_fs *jbd_fs, const void *buf,
 		/* First calculate crc32c checksum against fs uuid */
 		checksum = ext4_crc32c(EXT4_CRC32_INIT, jbd_fs->sb.uuid,
 				       sizeof(jbd_fs->sb.uuid));
-		/* Then calculate crc32c checksum against sequence no. */
+		/* Then calculate crc32c checksum against sequence no.,
+		 * big endian as on disk */
+		sequence = to_be32(sequence);
 		checksum = ext4_crc32c(checksum, &sequence,
 				sizeof(uint32_t));
 		/* Calculate crc32c checksum against tho whole block */
@@ -361,7 +366,7 @@ static void jbd_block_tag_csum_set(struct jbd_fs *jbd_fs, void *__tag,
 
 	if (ver == 2) {
 		struct jbd_block_tag *tag = __tag;
-		tag->checksum = (uint16_t)to_be32(checksum);
+		tag->checksum = to_be16((uint16_t)checksum);
 	} else {
 		struct jbd_block_tag3 *tag = __tag;
 		tag->checksum = to_be32(checksum);
@@ -461,6 +466,25 @@ int jbd_get_fs(struct ext4_fs *fs,
 	if (rc != EOK)
 		return rc;
 
+	/*
+	 * The journal inode is never modified while the journal is in use,
+	 * so keep a private copy of it for block mapping instead of pinning
+	 * its inode table block in the block cache for the whole session.
+	 * A pinned buffer is never written back, which would keep every
+	 * transaction touching an inode in that block (the root directory,
+	 * the first regular files...) on the checkpoint queue until the
+	 * journal wraps around.
+	 */
+	memcpy(&jbd_fs->inode, jbd_fs->inode_ref.inode,
+	       sizeof(struct ext4_inode));
+	rc = ext4_fs_put_inode_ref(&jbd_fs->inode_ref);
+	if (rc != EOK) {
+		memset(jbd_fs, 0, sizeof(struct jbd_fs));
+		return rc;
+	}
+	memset(&jbd_fs->inode_ref.block, 0, sizeof(struct ext4_block));
+	jbd_fs->inode_ref.inode = &jbd_fs->inode;
+
 	rc = jbd_sb_read(jbd_fs, &jbd_fs->sb);
 	if (rc != EOK)
 		goto Error;
@@ -475,7 +499,6 @@ int jbd_get_fs(struct ext4_fs *fs,
 
 	return rc;
 Error:
-	ext4_fs_put_inode_ref(&jbd_fs->inode_ref);
 	memset(jbd_fs, 0, sizeof(struct jbd_fs));
 
 	return rc;
@@ -486,11 +509,7 @@ Error:
  * @return standard error code*/
 int jbd_put_fs(struct jbd_fs *jbd_fs)
 {
-	int rc = EOK;
-	rc = jbd_write_sb(jbd_fs);
-
-	ext4_fs_put_inode_ref(&jbd_fs->inode_ref);
-	return rc;
+	return jbd_write_sb(jbd_fs);
 }
 
 /**@brief  Data block lookup helper.
@@ -904,14 +923,14 @@ static void jbd_replay_block_tags(struct jbd_fs *jbd_fs,
 
 	r = jbd_block_get(jbd_fs, &journal_block, *this_block);
 	if (r != EOK)
-		return;
+		goto Finish;
 
 	/* We need special treatment for ext4 superblock. */
 	if (tag_info->block) {
 		r = ext4_block_get_noread(fs->bdev, &ext4_block, tag_info->block);
 		if (r != EOK) {
 			jbd_block_set(jbd_fs, &journal_block);
-			return;
+			goto Finish;
 		}
 
 		memcpy(ext4_block.data,
@@ -922,7 +941,10 @@ static void jbd_replay_block_tags(struct jbd_fs *jbd_fs,
 			((struct jbd_bhdr *)ext4_block.data)->magic =
 					to_be32(JBD_MAGIC_NUMBER);
 
+		/* The block has to reach the disk before the journal
+		 * is marked empty. */
 		ext4_bcache_set_dirty(ext4_block.buf);
+		r = ext4_block_flush_buf(fs->bdev, ext4_block.buf);
 		ext4_block_set(fs->bdev, &ext4_block);
 	} else {
 		uint16_t mount_count, state;
@@ -936,16 +958,15 @@ static void jbd_replay_block_tags(struct jbd_fs *jbd_fs,
 		/* Mark system as mounted */
 		ext4_set16(&fs->sb, state, state);
 		r = ext4_sb_write(fs->bdev, &fs->sb);
-		if (r != EOK)
-			return;
 
 		/*Update mount count*/
 		ext4_set16(&fs->sb, mount_count, mount_count);
 	}
 
 	jbd_block_set(jbd_fs, &journal_block);
-	
-	return;
+Finish:
+	if (r != EOK && arg->error == EOK)
+		arg->error = r;
 }
 
 /**@brief  Add block address to revoke tree, along with
@@ -1137,9 +1158,16 @@ static int jbd_iterate_log(struct jbd_fs *jbd_fs,
 				replay_arg.info = info;
 				replay_arg.this_block = &this_block;
 				replay_arg.this_trans_id = this_trans_id;
+				replay_arg.error = EOK;
 
 				jbd_replay_descriptor_block(jbd_fs,
 						header, &replay_arg);
+				/* The journal must not be marked empty
+				 * while a block is not replayed. */
+				if (replay_arg.error != EOK) {
+					r = replay_arg.error;
+					log_end = true;
+				}
 			} else
 				jbd_debug_descriptor_block(jbd_fs,
 						header, &this_block);
@@ -1223,31 +1251,43 @@ int jbd_recover(struct jbd_fs *jbd_fs)
 
 	r = jbd_iterate_log(jbd_fs, &info, ACTION_SCAN);
 	if (r != EOK)
-		return r;
+		goto Finish;
 
 	r = jbd_iterate_log(jbd_fs, &info, ACTION_REVOKE);
 	if (r != EOK)
-		return r;
+		goto Finish;
 
 	r = jbd_iterate_log(jbd_fs, &info, ACTION_RECOVER);
 	if (r == EOK) {
 		/* If we successfully replay the journal,
 		 * clear EXT4_FINCOM_RECOVER flag on the
 		 * ext4 superblock, and set the start of
-		 * journal to 0.*/
+		 * journal to 0. The journal is marked empty
+		 * first: with the flag cleared and the old
+		 * start on the disk, a later recovery would
+		 * replay the transactions again, over newer
+		 * changes.*/
 		uint32_t features_incompatible =
 			ext4_get32(&jbd_fs->inode_ref.fs->sb,
 				   features_incompatible);
 		jbd_set32(&jbd_fs->sb, start, 0);
-		jbd_set32(&jbd_fs->sb, sequence, info.last_trans_id);
+		/* The next journal session has to use transaction IDs
+		 * beyond anything that may still be found in the log,
+		 * including a transaction whose commit block never made
+		 * it to disk. */
+		jbd_set32(&jbd_fs->sb, sequence, info.last_trans_id + 1);
+		r = jbd_sb_write(jbd_fs, &jbd_fs->sb);
+		if (r != EOK)
+			goto Finish;
+
 		features_incompatible &= ~EXT4_FINCOM_RECOVER;
 		ext4_set32(&jbd_fs->inode_ref.fs->sb,
 			   features_incompatible,
 			   features_incompatible);
-		jbd_fs->dirty = true;
 		r = ext4_sb_write(jbd_fs->bdev,
 				  &jbd_fs->inode_ref.fs->sb);
 	}
+Finish:
 	jbd_destroy_revoke_tree(&info);
 	return r;
 }
@@ -1311,14 +1351,18 @@ static void jbd_trans_end_write(struct ext4_bcache *bc __unused,
 			  void *arg);
 
 /*
- * This routine is only suitable to committed transactions. */
-static void jbd_journal_flush_trans(struct jbd_trans *trans)
+ * This routine is only suitable to committed transactions.
+ * Returns the error of the first block that cannot be written; the
+ * transaction then stays on the checkpoint queue. */
+static int jbd_journal_flush_trans(struct jbd_trans *trans)
 {
+	int r = EOK;
 	struct jbd_buf *jbd_buf, *tmp;
 	struct jbd_journal *journal = trans->journal;
 	struct ext4_fs *fs = journal->jbd_fs->inode_ref.fs;
 	void *tmp_data = ext4_malloc(journal->block_size);
-	ext4_assert(tmp_data);
+	if (!tmp_data)
+		return ENOMEM;
 
 	TAILQ_FOREACH_SAFE(jbd_buf, &trans->buf_queue, buf_node,
 			tmp) {
@@ -1329,26 +1373,31 @@ static void jbd_journal_flush_trans(struct jbd_trans *trans)
 					   jbd_buf->block_rec->lba);
 		if (!(buf && ext4_bcache_test_flag(buf, BC_UPTODATE) &&
 		      jbd_buf->block_rec->trans == trans)) {
-			int r;
 			struct ext4_block jbd_block = EXT4_BLOCK_ZERO();
 			r = jbd_block_get(journal->jbd_fs,
 						&jbd_block,
 						jbd_buf->jbd_lba);
-			ext4_assert(r == EOK);
-			memcpy(tmp_data, jbd_block.data,
-					journal->block_size);
-			ext4_block_set(fs->bdev, &jbd_block);
-			r = ext4_blocks_set_direct(fs->bdev, tmp_data,
-					jbd_buf->block_rec->lba, 1);
-			jbd_trans_end_write(fs->bdev->bc, buf, r, jbd_buf);
+			if (r == EOK) {
+				memcpy(tmp_data, jbd_block.data,
+						journal->block_size);
+				ext4_block_set(fs->bdev, &jbd_block);
+				r = ext4_blocks_set_direct(fs->bdev, tmp_data,
+						jbd_buf->block_rec->lba, 1);
+				jbd_trans_end_write(fs->bdev->bc, buf, r,
+						jbd_buf);
+			}
 		} else
-			ext4_block_flush_buf(fs->bdev, buf);
+			r = ext4_block_flush_buf(fs->bdev, buf);
 
 		if (buf)
 			ext4_block_set(fs->bdev, &block);
+
+		if (r != EOK)
+			break;
 	}
 
 	ext4_free(tmp_data);
+	return r;
 }
 
 static void
@@ -1364,11 +1413,12 @@ jbd_journal_skip_pure_revoke(struct jbd_journal *journal,
 	jbd_journal_write_sb(journal);
 }
 
-void
+int
 jbd_journal_purge_cp_trans(struct jbd_journal *journal,
 			   bool flush,
 			   bool once)
 {
+	int r;
 	struct jbd_trans *trans;
 	while ((trans = TAILQ_FIRST(&journal->cp_queue))) {
 		if (!trans->data_cnt) {
@@ -1402,12 +1452,16 @@ jbd_journal_purge_cp_trans(struct jbd_journal *journal,
 					trans->trans_id;
 				jbd_journal_write_sb(journal);
 				break;
-			} else
-				jbd_journal_flush_trans(trans);
+			} else {
+				r = jbd_journal_flush_trans(trans);
+				if (r != EOK)
+					return r;
+			}
 		}
 		if (once)
 			break;
 	}
+	return EOK;
 }
 
 /**@brief  Stop accessing the journal.
@@ -1420,8 +1474,11 @@ int jbd_journal_stop(struct jbd_journal *journal)
 	uint32_t features_incompatible;
 
 	/* Make sure that journalled content have reached
-	 * the disk.*/
-	jbd_journal_purge_cp_trans(journal, true, false);
+	 * the disk. If some of it cannot be written, the journal
+	 * still needs to be replayed: keep it marked so.*/
+	r = jbd_journal_purge_cp_trans(journal, true, false);
+	if (r != EOK)
+		return r;
 
 	/* There should be no block record in this journal
 	 * session. */
@@ -1442,8 +1499,16 @@ int jbd_journal_stop(struct jbd_journal *journal)
 	if (r != EOK)
 		return r;
 
+	/*
+	 * The log is empty now, but its blocks still hold the transactions
+	 * of this session. The next session writes the log from its first
+	 * block again, so its transaction IDs must be greater than the ones
+	 * used here: otherwise replaying the log after a crash may walk from
+	 * the new transactions into stale ones that happen to carry the next
+	 * expected ID. Record the next unused transaction ID, like jbd2 does.
+	 */
 	journal->start = 0;
-	journal->trans_id = 0;
+	journal->trans_id = journal->alloc_trans_id;
 	jbd_journal_write_sb(journal);
 	return jbd_write_sb(journal->jbd_fs);
 }
@@ -1451,24 +1516,29 @@ int jbd_journal_stop(struct jbd_journal *journal)
 /**@brief  Allocate a block in the journal.
  * @param  journal current journal session
  * @param  trans transaction
- * @return allocated block address*/
-static uint32_t jbd_journal_alloc_block(struct jbd_journal *journal,
-					struct jbd_trans *trans)
+ * @param  iblock allocated block address
+ * @return standard error code*/
+static int jbd_journal_alloc_block(struct jbd_journal *journal,
+				   struct jbd_trans *trans,
+				   uint32_t *iblock)
 {
-	uint32_t start_block;
+	int r;
 
-	start_block = journal->last++;
+	*iblock = journal->last++;
 	trans->alloc_blocks++;
 	wrap(&journal->jbd_fs->sb, journal->last);
 	
 	/* If there is no space left, flush just one journalled
-	 * transaction.*/
+	 * transaction. If its blocks cannot be written, it has to
+	 * stay in the journal: there is no room.*/
 	if (journal->last == journal->start) {
-		jbd_journal_purge_cp_trans(journal, true, true);
+		r = jbd_journal_purge_cp_trans(journal, true, true);
+		if (r != EOK)
+			return r;
 		ext4_assert(journal->last != journal->start);
 	}
 
-	return start_block;
+	return EOK;
 }
 
 static struct jbd_block_rec *
@@ -1774,7 +1844,9 @@ static int jbd_trans_write_commit_block(struct jbd_trans *trans)
 	uint32_t commit_iblock;
 	struct jbd_journal *journal = trans->journal;
 
-	commit_iblock = jbd_journal_alloc_block(journal, trans);
+	rc = jbd_journal_alloc_block(journal, trans, &commit_iblock);
+	if (rc != EOK)
+		return rc;
 
 	rc = jbd_block_get_noread(journal->jbd_fs, &block, commit_iblock);
 	if (rc != EOK)
@@ -1896,7 +1968,12 @@ static int jbd_journal_prepare(struct jbd_journal *journal,
 
 again:
 		if (!desc_iblock) {
-			desc_iblock = jbd_journal_alloc_block(journal, trans);
+			rc = jbd_journal_alloc_block(journal, trans,
+						     &desc_iblock);
+			if (rc != EOK) {
+				desc_iblock = 0;
+				break;
+			}
 			rc = jbd_block_get_noread(journal->jbd_fs, &desc_block, desc_iblock);
 			if (rc != EOK)
 				break;
@@ -1949,8 +2026,10 @@ again:
 			goto again;
 		}
 
-		data_iblock = jbd_journal_alloc_block(journal, trans);
-		rc = jbd_block_get_noread(journal->jbd_fs, &data_block, data_iblock);
+		rc = jbd_journal_alloc_block(journal, trans, &data_iblock);
+		if (rc == EOK)
+			rc = jbd_block_get_noread(journal->jbd_fs,
+						  &data_block, data_iblock);
 		if (rc != EOK) {
 			desc_iblock = 0;
 			ext4_bcache_clear_dirty(desc_block.buf);
@@ -2016,7 +2095,12 @@ jbd_journal_prepare_revoke(struct jbd_journal *journal,
 			  tmp) {
 again:
 		if (!desc_iblock) {
-			desc_iblock = jbd_journal_alloc_block(journal, trans);
+			rc = jbd_journal_alloc_block(journal, trans,
+						     &desc_iblock);
+			if (rc != EOK) {
+				desc_iblock = 0;
+				break;
+			}
 			rc = jbd_block_get_noread(journal->jbd_fs, &desc_block,
 						  desc_iblock);
 			if (rc != EOK)
@@ -2108,8 +2192,13 @@ static void jbd_trans_end_write(struct ext4_bcache *bc __unused,
 	struct jbd_journal *journal = trans->journal;
 	bool first_in_queue =
 		trans == TAILQ_FIRST(&journal->cp_queue);
-	if (res != EOK)
+	if (res != EOK) {
+		/* The block has not reached the disk: the transaction
+		 * stays in the journal until a later write of the block
+		 * succeeds (the buffer stays dirty).*/
 		trans->error = res;
+		return;
+	}
 
 	TAILQ_REMOVE(&trans->buf_queue, jbd_buf, buf_node);
 	TAILQ_REMOVE(&block_rec->dirty_buf_queue,

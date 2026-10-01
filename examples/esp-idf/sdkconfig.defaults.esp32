@@ -1,0 +1,5 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# ESP32: Espressif's QEMU also emulates the SDMMC host controller, so on
+# this chip the example uses an SD card on SDMMC slot 1 as well
+# (QEMU: -drive if=sd).
+CONFIG_EXAMPLE_SD_SDMMC=y

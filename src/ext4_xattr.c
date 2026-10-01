@@ -179,7 +179,7 @@ static uint32_t ext4_xattr_block_checksum(struct ext4_inode_ref *inode_ref,
 					  struct ext4_xattr_header *header)
 {
 	uint32_t checksum = 0;
-	uint64_t le64_blocknr = blocknr;
+	uint64_t le64_blocknr = to_le64(blocknr);
 	struct ext4_sblock *sb = &inode_ref->fs->sb;
 
 	if (ext4_sb_feature_ro_com(sb, EXT4_FRO_COM_METADATA_CSUM)) {
@@ -215,7 +215,7 @@ static void ext4_xattr_set_block_checksum(struct ext4_inode_ref *inode_ref,
 		return;
 
 	header->h_checksum =
-	    ext4_xattr_block_checksum(inode_ref, blocknr, header);
+	    to_le32(ext4_xattr_block_checksum(inode_ref, blocknr, header));
 }
 
 struct xattr_prefix {
@@ -335,7 +335,7 @@ static int ext4_xattr_set_entry(struct ext4_xattr_info *i,
 	/* Calculate free space in the block. */
 	free = min_offs - ((char *)last - (char *)s->base) - sizeof(uint32_t);
 	if (!s->not_found)
-		free += EXT4_XATTR_SIZE(s->here->e_value_size) +
+		free += EXT4_XATTR_SIZE(to_le32(s->here->e_value_size)) +
 			EXT4_XATTR_LEN(s->here->e_name_len);
 
 	if (i->value) {
@@ -381,8 +381,11 @@ static int ext4_xattr_set_entry(struct ext4_xattr_info *i,
 		     last = EXT4_XATTR_NEXT(last)) {
 			size_t offs = to_le16(last->e_value_offs);
 
-			/* For zero-value-length entry, offs will be zero. */
-			if (offs < value_offs)
+			/*
+			 * Entries without a value have offset zero, which
+			 * must stay zero.
+			 */
+			if (to_le32(last->e_value_size) && offs < value_offs)
 				last->e_value_offs = to_le16(offs + value_size);
 		}
 	}
@@ -565,6 +568,32 @@ static bool ext4_xattr_is_block_valid(struct ext4_inode_ref *inode_ref,
 }
 
 /**
+ * @brief The extra space of an inode beyond the first 128 bytes, if there is
+ *        room after it for attributes: the xattr header starts there and has
+ *        to fit into the inode. A damaged inode's i_extra_isize (up to 65535)
+ *        would otherwise put the header, and the attributes, past the end of
+ *        the inode, and clearing the space for the first attribute would
+ *        compute a negative (huge) size. Such an inode, like one without extra
+ *        space, has no room for attributes: they go to the xattr block.
+ *
+ * @param inode_ref Inode reference
+ *
+ * @return i_extra_isize, or 0 if the inode has no room for attributes
+ */
+static size_t ext4_xattr_extra_isize(struct ext4_inode_ref *inode_ref)
+{
+	struct ext4_sblock *sb = &inode_ref->fs->sb;
+	size_t inode_size = ext4_get16(sb, inode_size);
+	size_t extra_isize = ext4_inode_get_extra_isize(sb, inode_ref->inode);
+
+	if (extra_isize % 4 ||
+	    EXT4_GOOD_OLD_INODE_SIZE + extra_isize +
+		    sizeof(struct ext4_xattr_ibody_header) > inode_size)
+		return 0;
+	return extra_isize;
+}
+
+/**
  * @brief Check whether the inode buffer's content is valid
  *
  * @param inode_ref Inode reference
@@ -655,8 +684,7 @@ static void ext4_xattr_ibody_initialize(struct ext4_inode_ref *inode_ref)
 {
 	struct ext4_xattr_ibody_header *header;
 	struct ext4_fs *fs = inode_ref->fs;
-	size_t extra_isize =
-	    ext4_inode_get_extra_isize(&fs->sb, inode_ref->inode);
+	size_t extra_isize = ext4_xattr_extra_isize(inode_ref);
 	size_t inode_size = ext4_get16(&fs->sb, inode_size);
 	if (!extra_isize)
 		return;
@@ -745,13 +773,29 @@ static int ext4_xattr_block_find_entry(struct ext4_inode_ref *inode_ref,
  * 	   If the IO operation or the buffer validation failed,
  * 	   return other value.
  */
+/**
+ * @brief Whether the extra space of an inode starts with the xattr header.
+ *        Until an attribute is stored there it does not (e.g. every inode
+ *        lwext4 creates), and then the inode holds no attributes.
+ *
+ * @param inode_ref Inode reference
+ *
+ * @return true if the header's magic number is there
+ */
+static bool ext4_xattr_ibody_has_header(struct ext4_inode_ref *inode_ref)
+{
+	struct ext4_xattr_ibody_header *iheader =
+	    EXT4_XATTR_IHDR(&inode_ref->fs->sb, inode_ref->inode);
+
+	return iheader->h_magic == to_le32(EXT4_XATTR_MAGIC);
+}
+
 static int ext4_xattr_ibody_find_entry(struct ext4_inode_ref *inode_ref,
 				       struct ext4_xattr_finder *finder)
 {
 	struct ext4_fs *fs = inode_ref->fs;
 	struct ext4_xattr_ibody_header *iheader;
-	size_t extra_isize =
-	    ext4_inode_get_extra_isize(&fs->sb, inode_ref->inode);
+	size_t extra_isize = ext4_xattr_extra_isize(inode_ref);
 	size_t inode_size = ext4_get16(&fs->sb, inode_size);
 
 	/* Initialize the caller-given finder */
@@ -763,6 +807,12 @@ static int ext4_xattr_ibody_find_entry(struct ext4_inode_ref *inode_ref,
 	 * set ext4_xattr_ibody_finder::s::not_found to true and return EOK
 	 */
 	if (!extra_isize) {
+		finder->s.not_found = true;
+		return EOK;
+	}
+
+	/* No header: no attributes in the inode, which is not an error */
+	if (!ext4_xattr_ibody_has_header(inode_ref)) {
 		finder->s.not_found = true;
 		return EOK;
 	}
@@ -836,6 +886,31 @@ static void ext4_xattr_try_free_block(struct ext4_inode_ref *inode_ref)
 	}
 }
 
+/*
+ * Alignment of struct ext4_xattr_list_entry: the entry follows a char, so
+ * it starts at its alignment, and the structure is that plus the entry.
+ * (sizeof rather than offsetof: the offsetof fallback of ext4_misc.h
+ * dereferences a null pointer, which is undefined.)
+ */
+struct ext4_xattr_list_entry_align {
+	char c;
+	struct ext4_xattr_list_entry entry;
+};
+
+/**
+ * @brief Space one entry of the list built by ext4_xattr_list() takes:
+ *        the entry, the name and its terminating NUL, rounded up so that
+ *        the next entry is suitably aligned.
+ */
+static size_t ext4_xattr_list_entry_size(size_t name_len)
+{
+	const size_t align = sizeof(struct ext4_xattr_list_entry_align) -
+			     sizeof(struct ext4_xattr_list_entry);
+	size_t size = sizeof(struct ext4_xattr_list_entry) + name_len + 1;
+
+	return (size + align - 1) / align * align;
+}
+
 /**
  * @brief Put a list of EA entries into a caller-provided buffer
  * 	  In order to make sure that @list buffer can fit in the data,
@@ -855,8 +930,7 @@ int ext4_xattr_list(struct ext4_inode_ref *inode_ref,
 	size_t buf_len = 0;
 	struct ext4_fs *fs = inode_ref->fs;
 	struct ext4_xattr_ibody_header *iheader;
-	size_t extra_isize =
-	    ext4_inode_get_extra_isize(&fs->sb, inode_ref->inode);
+	size_t extra_isize = ext4_xattr_extra_isize(inode_ref);
 	struct ext4_block block;
 	bool block_loaded = false;
 	ext4_fsblk_t xattr_block = 0;
@@ -896,16 +970,12 @@ int ext4_xattr_list(struct ext4_inode_ref *inode_ref,
 
 				list_prev = list;
 				list = (struct ext4_xattr_list_entry
-					    *)(list->name + name_len + 1);
+					    *)((char *)list +
+					       ext4_xattr_list_entry_size(
+						   name_len));
 			}
 
-			/*
-			 * Size calculation by pointer arithmetics.
-			 */
-			buf_len +=
-			    (char *)((struct ext4_xattr_list_entry *)0 + 1) +
-			    name_len + 1 -
-			    (char *)(struct ext4_xattr_list_entry *)0;
+			buf_len += ext4_xattr_list_entry_size(name_len);
 		}
 	}
 
@@ -956,16 +1026,12 @@ int ext4_xattr_list(struct ext4_inode_ref *inode_ref,
 
 				list_prev = list;
 				list = (struct ext4_xattr_list_entry
-					    *)(list->name + name_len + 1);
+					    *)((char *)list +
+					       ext4_xattr_list_entry_size(
+						   name_len));
 			}
 
-			/*
-			 * Size calculation by pointer arithmetics.
-			 */
-			buf_len +=
-			    (char *)((struct ext4_xattr_list_entry *)0 + 1) +
-			    name_len + 1 -
-			    (char *)(struct ext4_xattr_list_entry *)0;
+			buf_len += ext4_xattr_list_entry_size(name_len);
 		}
 	}
 	if (list_prev)
@@ -1022,7 +1088,7 @@ int ext4_xattr_get(struct ext4_inode_ref *inode_ref, uint8_t name_index,
 
 	if (!ibody_finder.s.not_found) {
 		value_len = to_le32(ibody_finder.s.here->e_value_size);
-		value_offs = to_le32(ibody_finder.s.here->e_value_offs);
+		value_offs = to_le16(ibody_finder.s.here->e_value_offs);
 		if (buf_len && buf) {
 			void *data_loc =
 			    (char *)ibody_finder.s.base + value_offs;
@@ -1058,7 +1124,7 @@ int ext4_xattr_get(struct ext4_inode_ref *inode_ref, uint8_t name_index,
 		}
 
 		value_len = to_le32(block_finder.s.here->e_value_size);
-		value_offs = to_le32(block_finder.s.here->e_value_offs);
+		value_offs = to_le16(block_finder.s.here->e_value_offs);
 		if (buf_len && buf) {
 			void *data_loc =
 			    (char *)block_finder.s.base + value_offs;
@@ -1260,8 +1326,14 @@ int ext4_xattr_remove(struct ext4_inode_ref *inode_ref, uint8_t name_index,
 		}
 
 	} else {
+		/* Return ENODATA if entry is not found */
+		if (ibody_finder.s.not_found) {
+			ret = ENODATA;
+			goto out;
+		}
+
 		/* Now remove the entry */
-		ext4_xattr_set_entry(&i, &block_finder.s, false);
+		ext4_xattr_set_entry(&i, &ibody_finder.s, false);
 		inode_ref->dirty = true;
 	}
 out:
@@ -1491,8 +1563,7 @@ int ext4_xattr_set(struct ext4_inode_ref *inode_ref, uint8_t name_index,
 	struct ext4_xattr_info i;
 	bool block_found = false;
 	ext4_fsblk_t orig_xattr_block;
-	size_t extra_isize =
-	    ext4_inode_get_extra_isize(&fs->sb, inode_ref->inode);
+	size_t extra_isize = ext4_xattr_extra_isize(inode_ref);
 
 	i.name_index = name_index;
 	i.name = name;
@@ -1503,6 +1574,11 @@ int ext4_xattr_set(struct ext4_inode_ref *inode_ref, uint8_t name_index,
 	ibody_finder.i = i;
 
 	orig_xattr_block = ext4_inode_get_file_acl(inode_ref->inode, &fs->sb);
+
+	/* An inode without attributes gets the header first, so that the
+	 * search context below can be used to insert the entry. */
+	if (extra_isize && !ext4_xattr_ibody_has_header(inode_ref))
+		ext4_xattr_ibody_initialize(inode_ref);
 
 	/*
 	 * Even if entry is not found, search context block inside the

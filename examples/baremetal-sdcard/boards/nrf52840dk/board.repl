@@ -1,0 +1,10 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Nordic nRF52840 DK. Renode's nRF52840 description already has the real
+// memory sizes (1 MiB flash, 256 KiB RAM) and UARTE0 with EasyDMA.
+using "platforms/cpus/nrf52840.repl"
+
+// SPIM2: the SPI master with EasyDMA (the default model is the legacy SPI)
+spi2:
+    easyDMA: true
+
+// GPIO port P1 (gpio1, SD card chip select on P1.12) is in nrf52840.repl

@@ -1,0 +1,107 @@
+# SPDX-License-Identifier: BSD-3-Clause
+menu "lwext4"
+
+    choice LWEXT4_FEATURE_SET
+        prompt "Supported filesystem feature set"
+        default LWEXT4_FEATURE_SET_EXT4
+        help
+            Highest ext feature level lwext4 accepts when mounting. Images
+            using incompatible features beyond this level are refused.
+
+        config LWEXT4_FEATURE_SET_EXT2
+            bool "ext2"
+        config LWEXT4_FEATURE_SET_EXT3
+            bool "ext3"
+        config LWEXT4_FEATURE_SET_EXT4
+            bool "ext4"
+    endchoice
+
+    config LWEXT4_JOURNALING
+        bool "Journaling (ext3/ext4 jbd2 journal)"
+        default y
+        help
+            Journal replay (ext4_recover) and journalled transactions
+            (ext4_journal_start/stop). Strongly recommended on media that can
+            lose power mid-write.
+
+    config LWEXT4_XATTR
+        bool "Extended attributes"
+        default y
+        help
+            Compiles in src/ext4_xattr.c, which is licensed GPLv2 (the rest
+            of lwext4 is BSD-3-Clause).
+
+    config LWEXT4_EXTENTS
+        bool "Extents"
+        default y
+        help
+            Required to read and write files on ext4 images that use extents
+            (the mke2fs default for ext4). Compiles in src/ext4_extent.c,
+            which is licensed GPLv2 (the rest of lwext4 is BSD-3-Clause).
+
+    config LWEXT4_CACHE_SIZE
+        int "Block cache size (blocks)"
+        range 4 1024
+        default 16
+        help
+            Number of filesystem blocks kept in the lwext4 block cache. Each
+            entry costs one filesystem block of heap (1 KiB - 4 KiB), plus
+            some bookkeeping.
+
+    config LWEXT4_BLOCKDEVS_COUNT
+        int "Maximum number of registered block devices"
+        range 1 16
+        default 2
+
+    config LWEXT4_MOUNTPOINTS_COUNT
+        int "Maximum number of mount points"
+        range 1 16
+        default 2
+
+    config LWEXT4_MAX_NAME
+        int "Maximum block device / mount point name length"
+        range 8 128
+        default 32
+
+    config LWEXT4_MAX_TRUNCATE_SIZE
+        int "Maximum single truncate step (bytes)"
+        default 16777216
+        help
+            Large truncates are split into steps of this size so a single
+            transaction does not need unbounded memory.
+
+    config LWEXT4_BLOCKDEV_STATS
+        bool "Block device read/write counters"
+        default y
+
+    config LWEXT4_DEBUG_PRINTF
+        bool "Debug printf support"
+        default n
+        help
+            Compile in lwext4's debug messages. They are still filtered at
+            run time with ext4_dmask_set(). Costs a lot of flash.
+
+    config LWEXT4_DEBUG_ASSERT
+        bool "Internal assertions"
+        default n
+
+    config LWEXT4_PARTITION_MMAP_READS
+        bool "Flash partition block device: read through the flash cache"
+        default y
+        help
+            Read flash partitions through a 64 KiB memory mapped window
+            (esp_partition_mmap) instead of esp_partition_read(), which
+            disables the flash cache (stalling the other CPU core) for every
+            chunk it reads. Costs one 64 KiB window of the data address
+            space per partition block device.
+
+    config LWEXT4_PARTITION_SKIP_IDENTICAL
+        bool "Flash partition block device: skip rewriting identical sectors"
+        default y
+        help
+            The esp_partition block device has to erase a 4 KiB flash sector
+            before writing it. With this option the sector is read first and
+            the erase/program cycle is skipped when the data is unchanged,
+            which saves flash wear for metadata that lwext4 rewrites often.
+
+endmenu

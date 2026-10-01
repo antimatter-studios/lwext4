@@ -85,14 +85,17 @@ void ext4_inode_set_mode(struct ext4_sblock *sb, struct ext4_inode *inode,
 		inode->osd2.hurd2.mode_high = to_le16(mode >> 16);
 }
 
+/* The 32 bit uid/gid are split into two little endian 16 bit fields */
 uint32_t ext4_inode_get_uid(struct ext4_inode *inode)
 {
-	return to_le32(inode->uid);
+	return to_le16(inode->uid) |
+	       ((uint32_t)to_le16(inode->osd2.linux2.uid_high) << 16);
 }
 
 void ext4_inode_set_uid(struct ext4_inode *inode, uint32_t uid)
 {
-	inode->uid = to_le32(uid);
+	inode->uid = to_le16(uid & 0xffff);
+	inode->osd2.linux2.uid_high = to_le16(uid >> 16);
 }
 
 uint64_t ext4_inode_get_size(struct ext4_sblock *sb, struct ext4_inode *inode)
@@ -175,11 +178,14 @@ void ext4_inode_set_del_time(struct ext4_inode *inode, uint32_t time)
 
 uint32_t ext4_inode_get_gid(struct ext4_inode *inode)
 {
-	return to_le32(inode->gid);
+	return to_le16(inode->gid) |
+	       ((uint32_t)to_le16(inode->osd2.linux2.gid_high) << 16);
 }
+
 void ext4_inode_set_gid(struct ext4_inode *inode, uint32_t gid)
 {
-	inode->gid = to_le32(gid);
+	inode->gid = to_le16(gid & 0xffff);
+	inode->osd2.linux2.gid_high = to_le16(gid >> 16);
 }
 
 uint16_t ext4_inode_get_links_cnt(struct ext4_inode *inode)
@@ -392,6 +398,46 @@ bool ext4_inode_can_truncate(struct ext4_sblock *sb, struct ext4_inode *inode)
 		return true;
 
 	return false;
+}
+
+bool ext4_inode_is_fast_symlink(struct ext4_sblock *sb,
+				struct ext4_inode *inode)
+{
+	uint64_t size;
+	uint64_t ea_blocks = 0;
+
+	if (!ext4_inode_is_type(sb, inode, EXT4_INODE_MODE_SOFTLINK))
+		return false;
+
+	if (ext4_inode_has_flag(inode, EXT4_INODE_FLAG_INLINE_DATA))
+		return false;
+
+	size = ext4_inode_get_size(sb, inode);
+	if (size >= sizeof(inode->blocks))
+		return false;
+
+	/*
+	 * With EA inodes, xattr values stored in separate inodes are charged
+	 * to i_blocks too, so i_blocks can not tell fast and slow symlinks
+	 * apart. Symlinks shorter than i_block are always fast then.
+	 */
+	if (ext4_sb_feature_incom(sb, EXT4_FINCOM_EA_INODE))
+		return size != 0;
+
+	/*
+	 * Otherwise a fast symlink owns no blocks apart from an optional
+	 * extended attribute block, which is accounted for in i_blocks.
+	 */
+	if (ext4_inode_get_file_acl(inode, sb)) {
+		uint32_t cluster_size = ext4_sb_get_block_size(sb);
+
+		if (ext4_sb_feature_ro_com(sb, EXT4_FRO_COM_BIGALLOC))
+			cluster_size = 1024 << ext4_get32(sb, log_cluster_size);
+
+		ea_blocks = cluster_size >> 9;
+	}
+
+	return ext4_inode_get_blocks_count(sb, inode) == ea_blocks;
 }
 
 struct ext4_extent_header *

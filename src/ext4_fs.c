@@ -82,6 +82,11 @@ int ext4_fs_init(struct ext4_fs *fs, struct ext4_blockdev *bdev,
 	if (bsize > EXT4_MAX_BLOCK_SIZE)
 		return ENXIO;
 
+	/* Every filesystem block must cover whole physical device blocks,
+	 * see ext4_block_set_lb_size(). */
+	if (bsize % bdev->bdif->ph_bsize)
+		return ENOTSUP;
+
 	r = ext4_fs_check_features(fs, &read_only);
 	if (r != EOK)
 		return r;
@@ -283,6 +288,23 @@ static void ext4_fs_mark_bitmap_end(int start_bit, int end_bit, void *bitmap)
 		memset((char *)bitmap + (i >> 3), 0xff, (end_bit - i) >> 3);
 }
 
+/**@brief Mark a metadata block of a group in the group's block bitmap.
+ * @param bitmap      block bitmap data
+ * @param bitmap_bits number of bits in the bitmap
+ * @param first_bg    first block of the group
+ * @param blk         block to mark
+ * @return Error code (EIO if the block is outside of the bitmap)
+ */
+static int ext4_fs_bitmap_mark_block(uint8_t *bitmap, uint32_t bitmap_bits,
+				     ext4_fsblk_t first_bg, ext4_fsblk_t blk)
+{
+	if (blk < first_bg || blk - first_bg >= bitmap_bits)
+		return EIO;
+
+	ext4_bmap_bit_set(bitmap, (uint32_t)(blk - first_bg));
+	return EOK;
+}
+
 /**@brief Initialize block bitmap in block group.
  * @param bg_ref Reference to block group
  * @return Error code
@@ -311,6 +333,7 @@ static int ext4_fs_init_block_bitmap(struct ext4_block_group_ref *bg_ref)
 	bool meta_bg = ext4_sb_feature_incom(sb, EXT4_FINCOM_META_BG);
 
 	uint32_t inode_table_bcnt = inodes_per_group * inode_size / block_size;
+	uint32_t bitmap_bits = block_size * 8;
 
 	struct ext4_block block_bitmap;
 	rc = ext4_trans_block_get_noread(bg_ref->fs->bdev, &block_bitmap, bmp_blk);
@@ -329,6 +352,13 @@ static int ext4_fs_init_block_bitmap(struct ext4_block_group_ref *bg_ref)
 	} else { /* For META_BG_BLOCK_GROUPS */
 		bit_max += ext4_bg_num_gdb(sb, bg_ref->index);
 	}
+
+	/* The group's own metadata has to fit in its bitmap */
+	if (bit_max > bitmap_bits) {
+		rc = EIO;
+		goto fail;
+	}
+
 	for (bit = 0; bit < bit_max; bit++)
 		ext4_bmap_bit_set(block_bitmap.data, bit);
 
@@ -349,20 +379,30 @@ static int ext4_fs_init_block_bitmap(struct ext4_block_group_ref *bg_ref)
 
 	bool in_bg;
 	in_bg = ext4_block_in_group(sb, bmp_blk, bg_ref->index);
-	if (!flex_bg || in_bg)
-		ext4_bmap_bit_set(block_bitmap.data,
-				  (uint32_t)(bmp_blk - first_bg));
+	if (!flex_bg || in_bg) {
+		rc = ext4_fs_bitmap_mark_block(block_bitmap.data, bitmap_bits,
+					       first_bg, bmp_blk);
+		if (rc != EOK)
+			goto fail;
+	}
 
 	in_bg = ext4_block_in_group(sb, bmp_inode, bg_ref->index);
-	if (!flex_bg || in_bg)
-		ext4_bmap_bit_set(block_bitmap.data,
-				  (uint32_t)(bmp_inode - first_bg));
+	if (!flex_bg || in_bg) {
+		rc = ext4_fs_bitmap_mark_block(block_bitmap.data, bitmap_bits,
+					       first_bg, bmp_inode);
+		if (rc != EOK)
+			goto fail;
+	}
 
         for (i = inode_table; i < inode_table + inode_table_bcnt; i++) {
 		in_bg = ext4_block_in_group(sb, i, bg_ref->index);
-		if (!flex_bg || in_bg)
-			ext4_bmap_bit_set(block_bitmap.data,
-					  (uint32_t)(i - first_bg));
+		if (!flex_bg || in_bg) {
+			rc = ext4_fs_bitmap_mark_block(block_bitmap.data,
+						       bitmap_bits, first_bg,
+						       i);
+			if (rc != EOK)
+				goto fail;
+		}
 	}
         /*
          * Also if the number of blocks within the group is
@@ -377,6 +417,10 @@ static int ext4_fs_init_block_bitmap(struct ext4_block_group_ref *bg_ref)
 
 	/* Save bitmap */
 	return ext4_block_set(bg_ref->fs->bdev, &block_bitmap);
+
+fail:
+	ext4_block_set(bg_ref->fs->bdev, &block_bitmap);
+	return rc;
 }
 
 /**@brief Initialize i-node bitmap in block group.
@@ -400,6 +444,12 @@ static int ext4_fs_init_inode_bitmap(struct ext4_block_group_ref *bg_ref)
 	/* Initialize all bitmap bits to zero */
 	uint32_t block_size = ext4_sb_get_block_size(sb);
 	uint32_t inodes_per_group = ext4_get32(sb, inodes_per_group);
+
+	/* The bitmap of a group has to fit in a single block */
+	if (inodes_per_group > block_size * 8) {
+		ext4_block_set(bg_ref->fs->bdev, &b);
+		return EIO;
+	}
 
 	memset(b.data, 0, (inodes_per_group + 7) / 8);
 
@@ -478,6 +528,8 @@ static ext4_fsblk_t ext4_fs_get_descriptor_block(struct ext4_sblock *s,
 	if (!meta_bg || dsc_id < first_meta_bg)
 		return ext4_get32(s, first_data_block) + dsc_id + 1;
 
+	/* The descriptor block of a meta group is in its first group. */
+	bgid = dsc_id * dsc_per_block;
 	if (ext4_sb_is_super_in_bg(s, bgid))
 		has_super = 1;
 
@@ -567,6 +619,46 @@ static bool ext4_fs_verify_bg_csum(struct ext4_sblock *sb,
 #define ext4_fs_verify_bg_csum(...) true
 #endif
 
+/**@brief Whether the bitmaps and the inode table of a block group
+ *        descriptor lie inside the filesystem, after the block holding the
+ *        superblock. A damaged descriptor (e.g. all zeros) would otherwise
+ *        make lwext4 read the inode table from, and initialise bitmaps
+ *        over, block 0 or the superblock.
+ * @param sb superblock
+ * @param bg block group descriptor
+ * @return true if the locations are valid*/
+static bool ext4_fs_bg_locations_valid(struct ext4_sblock *sb,
+				       struct ext4_bgroup *bg)
+{
+	uint64_t first = ext4_get32(sb, first_data_block);
+	uint64_t blocks = ext4_sb_get_blocks_cnt(sb);
+	uint32_t block_size = ext4_sb_get_block_size(sb);
+	uint32_t inode_size = ext4_get16(sb, inode_size);
+	uint32_t table_blocks = 1;
+	uint64_t b;
+
+	/* (the inode size itself is checked with the superblock) */
+	if (inode_size && inode_size <= block_size) {
+		uint32_t inodes_per_block = block_size / inode_size;
+
+		table_blocks = ext4_get32(sb, inodes_per_group) /
+			       inodes_per_block;
+		if (ext4_get32(sb, inodes_per_group) % inodes_per_block)
+			table_blocks++;
+	}
+
+	b = ext4_bg_get_block_bitmap(bg, sb);
+	if (b <= first || b >= blocks)
+		return false;
+	b = ext4_bg_get_inode_bitmap(bg, sb);
+	if (b <= first || b >= blocks)
+		return false;
+	b = ext4_bg_get_inode_table_first_block(bg, sb);
+	if (b <= first || b >= blocks || table_blocks > blocks - b)
+		return false;
+	return true;
+}
+
 int ext4_fs_get_block_group_ref(struct ext4_fs *fs, uint32_t bgid,
 				struct ext4_block_group_ref *ref)
 {
@@ -589,6 +681,14 @@ int ext4_fs_get_block_group_ref(struct ext4_fs *fs, uint32_t bgid,
 	ref->index = bgid;
 	ref->dirty = false;
 	struct ext4_bgroup *bg = ref->block_group;
+
+	if (!ext4_fs_bg_locations_valid(&fs->sb, bg)) {
+		ext4_dbg(DEBUG_FS, DBG_ERROR "Block group %" PRIu32
+			 ": bitmap or inode table outside the filesystem\n",
+			 bgid);
+		ext4_block_set(fs->bdev, &ref->block);
+		return EIO;
+	}
 
 	if (!ext4_fs_verify_bg_csum(&fs->sb, bgid, bg)) {
 		ext4_dbg(DEBUG_FS,
@@ -936,6 +1036,11 @@ int ext4_fs_free_inode(struct ext4_inode_ref *inode_ref)
 	uint32_t offset;
 	uint32_t suboff;
 	int rc;
+
+	/* Fast symlink: i_block holds the target, not block pointers */
+	if (ext4_inode_is_fast_symlink(&fs->sb, inode_ref->inode))
+		goto finish;
+
 #if CONFIG_EXTENT_ENABLE && CONFIG_EXTENTS_ENABLE
 	/* For extents must be data block destroyed by other way */
 	if ((ext4_sb_feature_incom(&fs->sb, EXT4_FINCOM_EXTENTS)) &&
@@ -1175,12 +1280,78 @@ static int ext4_fs_release_inode_block(struct ext4_inode_ref *inode_ref,
 	return ext4_balloc_free_block(inode_ref, fblock);
 }
 
+/**@brief Free the indirect blocks of a block mapped inode that only map
+ *        logical blocks at or past @p keep (whose data blocks have already
+ *        been released).
+ * @param inode_ref I-node
+ * @param blk       Indirect block
+ * @param level     1 if the entries of @p blk are data blocks, 2 if they are
+ *                  single indirect blocks, 3 if double indirect blocks
+ * @param first     First logical block mapped by @p blk
+ * @param keep      Number of logical blocks that stay
+ * @param freed     Set to true if @p blk itself was freed
+ * @return Error code */
+static int ext4_fs_trunc_indirect(struct ext4_inode_ref *inode_ref,
+				  ext4_fsblk_t blk, unsigned int level,
+				  uint64_t first, uint64_t keep, bool *freed)
+{
+	struct ext4_fs *fs = inode_ref->fs;
+	uint32_t count = ext4_sb_get_block_size(&fs->sb) / sizeof(uint32_t);
+	uint64_t per_entry = fs->inode_blocks_per_level[level - 1];
+	int r;
+
+	*freed = false;
+	if (level > 1) {
+		struct ext4_block block;
+		bool dirty = false;
+		uint32_t i;
+
+		r = ext4_trans_block_get(fs->bdev, &block, blk);
+		if (r != EOK)
+			return r;
+
+		for (i = 0; i < count; i++) {
+			uint64_t start = first + i * per_entry;
+			uint32_t *entry = (uint32_t *)block.data + i;
+			bool child_freed;
+
+			if (!*entry || start + per_entry <= keep)
+				continue;
+
+			r = ext4_fs_trunc_indirect(inode_ref, to_le32(*entry),
+						   level - 1, start, keep,
+						   &child_freed);
+			if (r != EOK) {
+				ext4_block_set(fs->bdev, &block);
+				return r;
+			}
+
+			if (child_freed) {
+				*entry = 0;
+				dirty = true;
+			}
+		}
+
+		if (dirty && first < keep)
+			ext4_trans_set_block_dirty(block.buf);
+
+		r = ext4_block_set(fs->bdev, &block);
+		if (r != EOK)
+			return r;
+	}
+
+	if (first < keep)
+		return EOK;
+
+	*freed = true;
+	return ext4_balloc_free_block(inode_ref, blk);
+}
+
 int ext4_fs_truncate_inode(struct ext4_inode_ref *inode_ref, uint64_t new_size)
 {
 	struct ext4_sblock *sb = &inode_ref->fs->sb;
 	uint32_t i;
 	int r;
-	bool v;
 
 	/* Check flags, if i-node can be truncated */
 	if (!ext4_inode_can_truncate(sb, inode_ref->inode))
@@ -1195,10 +1366,8 @@ int ext4_fs_truncate_inode(struct ext4_inode_ref *inode_ref, uint64_t new_size)
 	if (old_size < new_size)
 		return EINVAL;
 
-	/* For symbolic link which is small enough */
-	v = ext4_inode_is_type(sb, inode_ref->inode, EXT4_INODE_MODE_SOFTLINK);
-	if (v && old_size < sizeof(inode_ref->inode->blocks) &&
-	    !ext4_inode_get_blocks_count(sb, inode_ref->inode)) {
+	/* Fast symlink: the target is stored in i_block, no data blocks */
+	if (ext4_inode_is_fast_symlink(sb, inode_ref->inode)) {
 		char *content = (char *)inode_ref->inode->blocks + new_size;
 		memset(content, 0,
 		       sizeof(inode_ref->inode->blocks) - (uint32_t)new_size);
@@ -1248,6 +1417,27 @@ int ext4_fs_truncate_inode(struct ext4_inode_ref *inode_ref, uint64_t new_size)
 							new_blocks_cnt + i);
 			if (r != EOK)
 				return r;
+		}
+
+		/* Release the indirect blocks that map nothing any more */
+		for (i = 1; i < 4; i++) {
+			ext4_fsblk_t ind;
+			bool freed;
+
+			ind = ext4_inode_get_indirect_block(inode_ref->inode,
+							    i - 1);
+			if (!ind)
+				continue;
+
+			r = ext4_fs_trunc_indirect(inode_ref, ind, i,
+					inode_ref->fs->inode_block_limits[i - 1],
+					new_blocks_cnt, &freed);
+			if (r != EOK)
+				return r;
+
+			if (freed)
+				ext4_inode_set_indirect_block(inode_ref->inode,
+							      i - 1, 0);
 		}
 	}
 
