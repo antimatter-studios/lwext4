@@ -87,4 +87,5 @@ tests/mt-stress                           # not yet submitted upstream: multi-th
 tests/mt-partitions                       # not yet submitted upstream: threads on two mount points on one disk (fork #62, on #59 and #57)
 fix/bg-desc-locations                     # not yet submitted upstream: refuse block group descriptors with impossible locations (fork #63)
 fix/xattr-extra-isize                     # not yet submitted upstream: no in-inode attributes when i_extra_isize leaves no room (fork #64, on #58)
+ci/coverage-atomic                        # fork only: thread safe coverage counters for the multi-thread tests (on #151)
 am/release                                # fork only: integration/release pipeline, fork README
