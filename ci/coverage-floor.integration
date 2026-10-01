@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: BSD-3-Clause
+#
+# Minimum line and branch coverage (percent) of src/ on the integration
+# branch, used by ci/jobs/coverage.sh instead of ci/coverage-floor when this
+# file exists. Only am/release carries it, so it applies once every topic
+# branch is merged; each topic branch keeps its own ci/coverage-floor.
+# Same rules: raise to the new measured values (rounded down to a whole
+# percent) when tests are added, never lower.
+#
+# integration 4f98e6b: 85.76% of lines, 71.77% of branches (x86_64),
+# 85.85% / 71.83% (arm64).
+line 85
+branch 71
