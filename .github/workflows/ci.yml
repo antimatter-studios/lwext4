@@ -91,6 +91,19 @@ jobs:
           ref: ${{ inputs.ref || github.ref }}
       - run: ci/run.sh cortex-m ${{ matrix.toolchain }}
 
+  # What the library needs on a microcontroller (ci/embedded-budget.txt):
+  # external symbols and stack frames of the Cortex-M0 build.
+  embedded-budget:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - run: ci/run.sh embedded-budget
+      - if: always()
+        run: cat build-ci/embedded-budget/summary.md >> "$GITHUB_STEP_SUMMARY" || true
+
   # Simulated targets without an operating system: arm-sim (ARM7TDMI) on
   # qemu-arm, AVR on simavr, MSP430 on the GDB simulator, plus the library
   # builds for AVR XMEGA and the MSP430G2210.
