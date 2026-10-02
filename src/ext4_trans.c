@@ -55,6 +55,10 @@ int ext4_trans_set_block_dirty(struct ext4_buf *buf)
 		.buf = buf
 	};
 
+	/* The journal failed (jbd_journal::error): no more changes */
+	if (fs->jbd_journal && fs->jbd_journal->error != EOK)
+		return fs->jbd_journal->error;
+
 	if (fs->jbd_journal && fs->curr_trans) {
 		struct jbd_trans *trans = fs->curr_trans;
 		return jbd_trans_set_block_dirty(trans, &block);
