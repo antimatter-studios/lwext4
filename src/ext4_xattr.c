@@ -611,7 +611,9 @@ static bool ext4_xattr_is_ibody_valid(struct ext4_inode_ref *inode_ref)
 
 	iheader = EXT4_XATTR_IHDR(&fs->sb, inode_ref->inode);
 	entry = EXT4_XATTR_IFIRST(iheader);
-	base = iheader;
+	/* Value offsets of in-inode attributes count from the first entry,
+	 * as in ext4_xattr_ibody_find_entry(), not from the header. */
+	base = entry;
 	end = (char *)inode_ref->inode + inode_size;
 	min_offs = (char *)end - (char *)base;
 
