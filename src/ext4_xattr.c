@@ -264,11 +264,11 @@ const char *ext4_extract_xattr_name(const char *full_name, size_t full_name_len,
 			if (!(full_name_len - prefix_len) && require_name)
 				return NULL;
 
+			/* The name after the prefix; for the ACL names, which
+			 * are the whole prefix, it is empty (but not NULL:
+			 * it goes to memcmp() and memcpy()). */
 			*found = true;
-			if (require_name)
-				return full_name + prefix_len;
-
-			return NULL;
+			return full_name + prefix_len;
 		}
 	}
 	if (name_len)
