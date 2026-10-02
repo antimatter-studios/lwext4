@@ -13,9 +13,12 @@ Issues
 - Issues copied from [gkostka/lwext4](https://github.com/gkostka/lwext4)
   carry the `upstream-copy` label and name the upstream issue in their
   first line.
-- Write upstream issue and pull request numbers as "upstream #73". A bare
-  `#73` in an issue, pull request or commit message means issue 73 of
-  this repository, and "Fixes #73" in a pull request closes it.
+- Write upstream issue and pull request numbers without `#`, as
+  "upstream issue 73" or "upstream PR 103": GitHub links every `#73` in an
+  issue, pull request or commit message to issue 73 of this repository,
+  and "Fixes #73" in a pull request closes it. Link to an upstream page
+  only inside code (`` `https://github.com/gkostka/lwext4/issues/73` ``),
+  where GitHub does not add a cross-reference to the upstream issue.
 
 Pull requests
 -------------
