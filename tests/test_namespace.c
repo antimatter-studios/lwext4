@@ -269,13 +269,21 @@ static void seek_tell(void)
 	TEST_ASSERT_EQ(EOK, ext4_fseek(&f, -2, SEEK_CUR));
 	TEST_ASSERT_EQ(EOK, ext4_fwrite(&f, "AB", 2, &n));
 	TEST_ASSERT_EQ(10, ext4_fsize(&f));
-	TEST_ASSERT_EQ(EINVAL, ext4_fseek(&f, 11, SEEK_SET));
 	TEST_ASSERT_EQ(EINVAL, ext4_fseek(&f, -1, SEEK_SET));
 	TEST_ASSERT_EQ(EINVAL, ext4_fseek(&f, -1, SEEK_END));
 	TEST_ASSERT_EQ(EINVAL, ext4_fseek(&f, 11, SEEK_END));
-	TEST_ASSERT_EQ(EINVAL, ext4_fseek(&f, 20, SEEK_CUR));
 	TEST_ASSERT_EQ(EINVAL, ext4_fseek(&f, -20, SEEK_CUR));
 	TEST_ASSERT_EQ(EINVAL, ext4_fseek(&f, 0, 42));
+	/* Past the end is allowed, as with lseek (a write there leaves a
+	 * hole, fork issue #103); reading there gives nothing */
+	TEST_ASSERT_EQ(EOK, ext4_fseek(&f, 11, SEEK_SET));
+	TEST_ASSERT_EQ(11, ext4_ftell(&f));
+	TEST_ASSERT_EQ(EOK, ext4_fseek(&f, 20, SEEK_CUR));
+	TEST_ASSERT_EQ(31, ext4_ftell(&f));
+	TEST_ASSERT_EQ(EINVAL, ext4_fseek(&f, -40, SEEK_CUR));
+	TEST_ASSERT_EQ(EOK, ext4_fread(&f, buf, 3, &n));
+	TEST_ASSERT_EQ(0, n);
+	TEST_ASSERT_EQ(10, ext4_fsize(&f));
 	/* Append mode writes at the end. */
 	TEST_ASSERT_EQ(EOK, ext4_fclose(&f));
 	TEST_ASSERT_EQ(EOK, ext4_fopen(&f, TEST_MP "seek", "ab"));
