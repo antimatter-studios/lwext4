@@ -23,6 +23,9 @@
  * maps). lwext4 cannot seek past the end of a file (EINVAL) and
  * ext4_ftruncate() does not grow files, so writes start at most at the
  * end of a file and truncates only shrink.
+ *
+ * red-green: guard (an exerciser, not the test of a fix: it passes on any
+ * base that keeps the data intact)
  */
 
 #include "test_util.h"
