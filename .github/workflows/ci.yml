@@ -8,8 +8,12 @@
 name: CI
 
 on:
+  # Pull requests into main, and main after a merge (release tags run the
+  # workflows through release.yml; other branches by hand).
   push:
+    branches: [main]
   pull_request:
+    branches: [main]
   workflow_dispatch:
   # Other workflows (release) run the same jobs on a given ref.
   workflow_call:
