@@ -198,7 +198,7 @@ Here is a brief summary for cortex-m4 processor (arm-none-eabi-gcc 14, -O2,
 debug output disabled; measured by tests/acceptance/test-cortex-m.sh):
 
 * .text:  48KB - only ext2 fs support , 65KB - full ext4 fs feature set
-* RAM:    13KB - minimum 8 x 1KB  block cache (9KB heap, 4.6KB static data), 19KB - when journaling and extents are enabled
+* RAM:    15KB - minimum 8 x 1KB  block cache (10KB heap, 5KB static data), 24KB - when journaling and extents are enabled
 * .stack: 2KB - is enough (about 1KB measured)
 
 Blocks are allocated dynamically. Previous versions of library could work without
@@ -211,9 +211,9 @@ to give it a fixed pool. `tests/test_memory.c` records every allocation of
 typical workloads (mkfs, mount, small and large files, a 1500 entry
 directory, xattrs, mixed churn), checks for leaks and replays them through a
 simple first-fit allocator on a fixed area, as a microcontroller heap. With
-16 block cache buffers on a 64-bit host the busiest workload needs a 23KB
-heap with 1KB blocks and 87KB with 4KB blocks; first-fit fragmentation costs
-up to 4% (1KB blocks) and 12% (4KB blocks) over the peak. The test fails if
+16 block cache buffers the busiest workload needs a 24KB heap with 1KB
+blocks and 87KB with 4KB blocks; first-fit fragmentation costs up to 6%
+(1KB blocks) and 17% (4KB blocks, on 32-bit x86) over the peak. The test fails if
 a workload leaks or needs more than the ceilings in
 `tests/test_memory_budget.h`.
 
