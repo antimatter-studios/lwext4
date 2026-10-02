@@ -827,6 +827,21 @@ struct jbd_sb {
 
 #if CONFIG_USE_USER_MALLOC
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* Provided by the application: same contracts as malloc, calloc, realloc
+ * and free. */
+void *ext4_user_malloc(size_t size);
+void *ext4_user_calloc(size_t nmemb, size_t size);
+void *ext4_user_realloc(void *ptr, size_t size);
+void ext4_user_free(void *ptr);
+
+#ifdef __cplusplus
+}
+#endif
+
 #define ext4_malloc  ext4_user_malloc
 #define ext4_calloc  ext4_user_calloc
 #define ext4_realloc ext4_user_realloc
