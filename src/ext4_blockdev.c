@@ -177,6 +177,10 @@ int ext4_block_fini(struct ext4_blockdev *bdev)
 	if (bdev->bdif->ph_refctr)
 		return EOK;
 
+	ext4_free(bdev->bdif->lb_bbuf);
+	bdev->bdif->lb_bbuf = NULL;
+	bdev->bdif->lb_bsize = 0;
+
 	/*Low level block fini*/
 	return bdev->bdif->close(bdev);
 }
@@ -360,10 +364,7 @@ int ext4_block_write_zeroed(struct ext4_blockdev *bdev, uint64_t lba,
 {
 	struct ext4_blockdev_iface *bdif = bdev->bdif;
 	uint32_t ph_bsize = bdif->ph_bsize;
-	uint32_t count = bdev->lg_bsize / ph_bsize;
-	const uint8_t *p = buf;
 	uint64_t pba;
-	uint32_t i;
 	int r = EOK;
 
 	ext4_assert(bdev && (buf || !len));
@@ -375,24 +376,28 @@ int ext4_block_write_zeroed(struct ext4_blockdev *bdev, uint64_t lba,
 	    (lba + 1) * bdev->lg_bsize > bdev->part_size)
 		return EINVAL;
 
-	/* One physical block at a time through the interface's buffer: no
-	 * allocation, and nothing is read */
+	/* The block is built in the interface's logical block buffer and
+	 * written with one call (one command for an SD card, rather than one
+	 * per sector); the buffer is allocated once, at the first use, and
+	 * grows to the largest block size of the partitions on the device */
 	pba = (lba * bdev->lg_bsize + bdev->part_offset) / ph_bsize;
 	ext4_bdif_lock(bdev);
-	for (i = 0; i < count; i++) {
-		uint32_t start = i * ph_bsize, end = start + ph_bsize;
-		uint32_t from = off > start ? off : start;
-		uint32_t to = off + len < end ? off + len : end;
+	if (bdif->lb_bsize < bdev->lg_bsize) {
+		uint8_t *nbuf = ext4_malloc(bdev->lg_bsize);
 
-		memset(bdif->ph_bbuf, 0, ph_bsize);
-		if (from < to)
-			memcpy(bdif->ph_bbuf + (from - start), p + (from - off),
-			       to - from);
-		r = bdif->bwrite(bdev, bdif->ph_bbuf, pba + i, 1);
-		bdif->bwrite_ctr++;
-		if (r != EOK)
-			break;
+		if (!nbuf) {
+			ext4_bdif_unlock(bdev);
+			return ENOMEM;
+		}
+		ext4_free(bdif->lb_bbuf);
+		bdif->lb_bbuf = nbuf;
+		bdif->lb_bsize = bdev->lg_bsize;
 	}
+	memset(bdif->lb_bbuf, 0, bdev->lg_bsize);
+	if (len)
+		memcpy(bdif->lb_bbuf + off, buf, len);
+	r = bdif->bwrite(bdev, bdif->lb_bbuf, pba, bdev->lg_bsize / ph_bsize);
+	bdif->bwrite_ctr++;
 	ext4_bdif_unlock(bdev);
 	return r;
 }
