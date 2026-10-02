@@ -30,9 +30,17 @@ if [ -f "$mkfs_tool.exe" ]; then # Windows build, run by e.g. "wine"
 	mkfs_tool="$mkfs_tool.exe"
 	generic_tool="$generic_tool.exe"
 fi
-work="$build/roundtrip"
-rm -rf "$work"
-mkdir -p "$work"
+# Disk images in tmp/ of the worktree, deleted when the script ends unless
+# LWEXT4_KEEP_TEST_IMAGES is set; the logs stay in the build directory
+top=$(cd "$(dirname "$0")/../.." && pwd)
+work="$top/tmp/roundtrip/$(basename "$build")"
+logs="$build/roundtrip"
+rm -rf "$work" "$logs"
+mkdir -p "$work" "$logs"
+if [ -z "${LWEXT4_KEEP_TEST_IMAGES:-}" ]; then
+	trap 'rc=$?; rm -rf "$work"; exit $rc' EXIT
+	trap 'exit 130' INT TERM
+fi
 
 failed=0
 passed=0
@@ -45,9 +53,9 @@ fail()
 
 fsck_image()
 {
-	if ! e2fsck -fn "$img" >"$work/$case_name.fsck.log" 2>&1; then
+	if ! e2fsck -fn "$img" >"$logs/$case_name.fsck.log" 2>&1; then
 		fail "e2fsck after $1"
-		sed 's/^/    /' "$work/$case_name.fsck.log" | head -40
+		sed 's/^/    /' "$logs/$case_name.fsck.log" | head -40
 		return 1
 	fi
 }
@@ -55,9 +63,9 @@ fsck_image()
 run_generic()
 {
 	if ! $emu "$generic_tool" -i "$img" -d 50 -c 8 -s 65536 \
-	    >"$work/$case_name.generic.log" 2>&1; then
+	    >"$logs/$case_name.generic.log" 2>&1; then
 		fail "lwext4-generic"
-		tail -40 "$work/$case_name.generic.log" | sed 's/^/    /'
+		tail -40 "$logs/$case_name.generic.log" | sed 's/^/    /'
 		return 1
 	fi
 }
@@ -90,9 +98,9 @@ target_mkfs_case()
 	echo "== $case_name"
 	truncate -s 32M "$img"
 	if ! $emu "$mkfs_tool" -i "$img" -b 1024 -e "$1" \
-	    >"$work/$case_name.mkfs.log" 2>&1; then
+	    >"$logs/$case_name.mkfs.log" 2>&1; then
 		fail "lwext4-mkfs"
-		tail -40 "$work/$case_name.mkfs.log" | sed 's/^/    /'
+		tail -40 "$logs/$case_name.mkfs.log" | sed 's/^/    /'
 		return 0
 	fi
 	fsck_image "lwext4-mkfs" && run_generic &&

@@ -10,3 +10,5 @@ ext_images/
 .gdbinit
 tags
 build-ci/
+# Scratch files and disk images of the tests (tests/run_test.sh)
+/tmp/

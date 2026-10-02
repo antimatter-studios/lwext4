@@ -8,6 +8,17 @@
 
 file(GLOB LWEXT4_TEST_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/test_*.c)
 
+# Disk images and other scratch files of the tests go into tmp/ of the source
+# tree (the worktree, gitignored), one directory per build directory so that
+# several builds can run their tests at once; run_test.sh deletes a test's
+# directory when the test finishes (LWEXT4_KEEP_TEST_IMAGES=1 keeps it).
+string(MD5 LWEXT4_BUILD_ID "${CMAKE_BINARY_DIR}")
+string(SUBSTRING "${LWEXT4_BUILD_ID}" 0 8 LWEXT4_BUILD_ID)
+get_filename_component(LWEXT4_BUILD_NAME "${CMAKE_BINARY_DIR}" NAME)
+set(LWEXT4_TEST_TMPDIR
+    "${PROJECT_SOURCE_DIR}/tmp/tests/${LWEXT4_BUILD_NAME}-${LWEXT4_BUILD_ID}"
+    CACHE PATH "Where the tests create their disk images")
+
 add_library(lwext4_test_util STATIC common/test_util.c)
 target_include_directories(lwext4_test_util PUBLIC common)
 find_package(Threads REQUIRED)
@@ -39,7 +50,7 @@ foreach(test_src ${LWEXT4_TEST_SOURCES})
     add_test(NAME ${test_name}
              COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/run_test.sh
                      ${CMAKE_CURRENT_SOURCE_DIR}/${test_name}.sh
-                     ${CMAKE_CURRENT_BINARY_DIR}/work/${test_name}
+                     ${LWEXT4_TEST_TMPDIR}/${test_name}
                      ${CMAKE_CROSSCOMPILING_EMULATOR}
                      $<TARGET_FILE:${test_name}>)
     if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/${test_name}.cmake)
@@ -53,7 +64,7 @@ if(NOT CMAKE_VERSION VERSION_LESS 3.15)
     add_test(NAME install_prefix
              COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/install_prefix.sh
                      ${CMAKE_COMMAND} ${PROJECT_BINARY_DIR}
-                     ${CMAKE_CURRENT_BINARY_DIR}/work/install_prefix)
+                     ${LWEXT4_TEST_TMPDIR}/install_prefix)
 endif()
 
 # The installed library must be usable by other projects through
@@ -64,7 +75,7 @@ if(NOT CMAKE_CROSSCOMPILING)
     add_test(NAME install_package
              COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/install_package.sh
                      ${CMAKE_COMMAND} ${PROJECT_BINARY_DIR}
-                     ${CMAKE_CURRENT_BINARY_DIR}/work/install_package
+                     ${LWEXT4_TEST_TMPDIR}/install_package
                      ${PROJECT_SOURCE_DIR} ${CMAKE_C_COMPILER}
                      "${CMAKE_C_FLAGS}" "${CMAKE_EXE_LINKER_FLAGS}")
 endif()
