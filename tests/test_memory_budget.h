@@ -6,6 +6,9 @@
  * workload in (ff-min). Measured on a 64-bit (LP64) host with the block
  * cache size of the hosted builds (the allocation sequence is the same on
  * every platform; 32-bit targets need less), rounded up to the next KiB.
+ * ff-min also depends on the sizes of the allocations, which differ with
+ * the pointer size, so where a 32-bit platform of the CI needs more, its
+ * value sets the ceiling (noted next to it).
  * A change that lowers the measured values lowers these to match; nothing
  * may raise them without a reason in the commit message.
  */
@@ -29,5 +32,5 @@ static const struct budget memory_budget[] = {
 	{"directory/4k",     78848,  87040}, /* 78280, 86592 */
 	{"xattr/4k",         72704,  76800}, /* 72664, 76672 */
 	{"churn-1/4k",       64512,  65536}, /* 64344, 64832 */
-	{"churn-20/4k",      73728,  80896}, /* 72824, 80768 */
+	{"churn-20/4k",      73728,  83968}, /* 72824, 80768; ff-min 83712 on i686 */
 };
