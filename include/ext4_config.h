@@ -218,7 +218,9 @@ extern "C" {
 #endif
 
 /**@brief Switches use of malloc/free functions family
- *        from standard library to user provided*/
+ *        from standard library to user provided: ext4_user_malloc,
+ *        ext4_user_calloc, ext4_user_realloc and ext4_user_free
+ *        (declared in ext4_types.h)*/
 #ifndef CONFIG_USE_USER_MALLOC
 #define CONFIG_USE_USER_MALLOC 0
 #endif
