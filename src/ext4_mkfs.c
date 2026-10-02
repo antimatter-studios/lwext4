@@ -883,7 +883,12 @@ int ext4_mkfs(struct ext4_fs *fs, struct ext4_blockdev *bd,
 	ext4_fs_fini(fs);
 
 	cache_fini:
-	ext4_block_cache_write_back(bd, 0);
+	{
+		int rw = ext4_block_cache_write_back(bd, 0);
+
+		if (r == EOK)
+			r = rw;
+	}
 	ext4_bcache_cleanup(&bc);
 	ext4_bcache_fini_dynamic(&bc);
 
