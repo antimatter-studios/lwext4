@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: BSD-3-Clause
 # ext4 image with nested directories and one large (multi-block) directory.
 dir="$1.d"
 mkdir -p "$dir/dir1/dir2" "$dir/dir1/empty" "$dir/big"

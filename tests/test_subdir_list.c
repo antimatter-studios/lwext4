@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: BSD-3-Clause */
+
 /*
  * Listing nested directories (upstream issue 53): subdirectories created by
  * mke2fs -d and by lwext4 itself must be listable through ext4_dir_open()/
