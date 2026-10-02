@@ -1932,6 +1932,47 @@ int ext4_fread(ext4_file *file, void *buf, size_t size, size_t *rcnt)
 	return r;
 }
 
+/* Write len bytes at offset unalg of the newly allocated block fblk. The
+ * rest of a new block must read as zeros, not as whatever the disk held
+ * (a hole, or the end of the file that may later grow). */
+static int ext4_fwrite_new_block(struct ext4_blockdev *bdev,
+				 ext4_fsblk_t fblk, uint32_t unalg,
+				 const uint8_t *data, size_t len)
+{
+	/* Block 0 is never a file's: writing there would destroy the
+	 * boot block and superblock */
+	if (!fblk)
+		return EIO;
+
+	return ext4_block_write_zeroed(bdev, fblk, unalg, data,
+				       (uint32_t)len);
+}
+
+/* Write len bytes at offset unalg of logical block iblk of the file, a
+ * block inside the file that may be a hole or unwritten (both look up as
+ * block 0; ext4_fs_init_inode_dblk_idx() allocates the one or zeroes and
+ * converts the other). */
+static int ext4_fwrite_part(struct ext4_inode_ref *ref, uint32_t iblk,
+			    uint32_t unalg, const uint8_t *data, size_t len)
+{
+	struct ext4_blockdev *bdev = ref->fs->bdev;
+	ext4_fsblk_t fblk;
+	int r;
+
+	r = ext4_fs_get_inode_dblk_idx(ref, iblk, &fblk, true);
+	if (r != EOK)
+		return r;
+	if (fblk)
+		return ext4_block_writebytes(bdev,
+					     fblk * bdev->lg_bsize + unalg,
+					     data, len);
+
+	r = ext4_fs_init_inode_dblk_idx(ref, iblk, &fblk);
+	if (r != EOK)
+		return r;
+	return ext4_fwrite_new_block(bdev, fblk, unalg, data, len);
+}
+
 int ext4_fwrite(ext4_file *file, const void *buf, size_t size, size_t *wcnt)
 {
 	uint32_t unalg;
@@ -2005,16 +2046,10 @@ int ext4_fwrite(ext4_file *file, const void *buf, size_t size, size_t *wcnt)
 
 	if (unalg) {
 		size_t len =  size;
-		uint64_t off;
 		if (size > (block_size - unalg))
 			len = block_size - unalg;
 
-		r = ext4_fs_init_inode_dblk_idx(&ref, iblk_idx, &fblk);
-		if (r != EOK)
-			goto Finish;
-
-		off = fblk * block_size + unalg;
-		r = ext4_block_writebytes(file->mp->fs.bdev, off, u8_buf, len);
+		r = ext4_fwrite_part(&ref, iblk_idx, unalg, u8_buf, len);
 		if (r != EOK)
 			goto Finish;
 
@@ -2105,9 +2140,8 @@ int ext4_fwrite(ext4_file *file, const void *buf, size_t size, size_t *wcnt)
 		goto Finish;
 
 	if (size) {
-		uint64_t off;
 		if (iblk_idx < ifile_blocks) {
-			r = ext4_fs_init_inode_dblk_idx(&ref, iblk_idx, &fblk);
+			r = ext4_fwrite_part(&ref, iblk_idx, 0, u8_buf, size);
 			if (r != EOK)
 				goto Finish;
 		} else {
@@ -2115,12 +2149,11 @@ int ext4_fwrite(ext4_file *file, const void *buf, size_t size, size_t *wcnt)
 			if (r != EOK)
 				/*Node size sholud be updated.*/
 				goto out_fsize;
+			r = ext4_fwrite_new_block(file->mp->fs.bdev, fblk, 0,
+						  u8_buf, size);
+			if (r != EOK)
+				goto Finish;
 		}
-
-		off = fblk * block_size;
-		r = ext4_block_writebytes(file->mp->fs.bdev, off, u8_buf, size);
-		if (r != EOK)
-			goto Finish;
 
 		file->fpos += size;
 

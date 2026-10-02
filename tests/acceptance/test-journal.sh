@@ -243,7 +243,9 @@ writes_at_most 0 cache_write_back 0
 crash
 EOF
 data_writes=$(sed -n 's/^io write: reads [0-9]* writes //p' "$WORK/cache.log")
-[ "$data_writes" -eq 3 ] ||
+# Written right away: at least one device write, at most one per block
+# (contiguous blocks go in one write, a new partial block in one).
+[ "$data_writes" -ge 1 ] && [ "$data_writes" -le 3 ] ||
 	die "write back: ext4_fwrite of 3 blocks did $data_writes block writes"
 for p in /wbdir /wb1; do
 	if debugfs -R "stat $p" "$img" 2>&1 | grep -q '^Inode:'; then
