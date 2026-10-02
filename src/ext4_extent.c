@@ -1314,13 +1314,21 @@ static int ext4_ext_insert_leaf(struct ext4_inode_ref *inode_ref,
 		if (curp->extent &&
 		    ext4_ext_can_prepend(curp->extent, newext)) {
 			unwritten = ext4_ext_is_unwritten(curp->extent);
+			/* The merged extent starts where the new one does,
+			 * logically and physically */
 			curp->extent->first_block = newext->first_block;
+			ext4_ext_store_pblock(curp->extent,
+					      ext4_ext_pblock(newext));
 			curp->extent->block_count =
 			    to_le16(ext4_ext_get_actual_len(curp->extent) +
 				    ext4_ext_get_actual_len(newext));
 			if (unwritten)
 				ext4_ext_mark_unwritten(curp->extent);
 
+			/* The first block of the leaf may have moved */
+			err = ext4_ext_correct_indexes(inode_ref, path);
+			if (err != EOK)
+				goto out;
 			err = ext4_ext_dirty(inode_ref, curp);
 			goto out;
 		}
@@ -1772,10 +1780,15 @@ int ext4_extent_remove_space(struct ext4_inode_ref *inode_ref, ext4_lblk_t from,
 	bool in_range = IN_RANGE(from, to_le32(path[depth].extent->first_block),
 				 ext4_ext_get_actual_len(path[depth].extent));
 
-	if (!in_range) {
-		ret = EOK;
-		goto out;
-	}
+	/*
+	 * from may lie in a hole: before the extent found (the first one of
+	 * the file starts after it), whose extents the loop below removes
+	 * as they come, or after it, where removal starts with the next
+	 * extent (if this leaf has none, the loop goes on with the next
+	 * leaves). Returning here left the extents after a hole in place.
+	 */
+	if (!in_range && to_le32(path[depth].extent->first_block) < from)
+		path[depth].extent++;
 
 	/* If we do remove_space inside the range of an extent */
 	if ((to_le32(path[depth].extent->first_block) < from) &&
