@@ -100,6 +100,15 @@ struct ext4_blockdev_iface {
 
 	/**@brief   User data pointer*/
 	void* p_user;
+
+	/**@brief   Logical block buffer, allocated by the library when a whole
+	 *          block is written at once (ext4_block_write_zeroed) and
+	 *          freed when the device is closed; used under the device
+	 *          lock*/
+	uint8_t *lb_bbuf;
+
+	/**@brief   Size of lb_bbuf (bytes)*/
+	uint32_t lb_bsize;
 };
 
 /**@brief   Definition of the simple block device.*/
@@ -227,8 +236,9 @@ int ext4_blocks_set_direct(struct ext4_blockdev *bdev, const void *buf,
 			   uint64_t lba, uint32_t cnt);
 
 /**@brief   Write a whole logical block (by direct address): len bytes
- *          of buf at offset off of the block, zeros in the rest of it.
- *          Nothing is read, nothing is allocated.
+ *          of buf at offset off of the block, zeros in the rest of it,
+ *          with one write. Nothing is read; the block is built in
+ *          the interface's lb_bbuf, allocated at the first use.
  * @param   bdev block device descriptor
  * @param   lba logical block address
  * @param   off byte offset in the block
