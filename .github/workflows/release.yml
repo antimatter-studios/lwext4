@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 #
-# Release of an `integration` build. Push a tag v<upstream next patch>-am.<n>
-# (e.g. v1.0.1-am.1, see README) on a commit of `integration`: the whole CI
+# Release of a `main` build. Push a tag v<upstream next patch>-am.<n>
+# (e.g. v1.0.1-am.4, see README) on a commit of `main`: the whole CI
 # matrix runs on the tag, the release packages are built (each one running
 # its own CTest suite), and only if every job passed is the GitHub release
 # published with the packages, JUnit test results, test report and manifest.
@@ -160,9 +160,9 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - name: The tag must be on integration
+      - name: The tag must be on main
         run: |
-          git fetch origin integration
+          git fetch origin main
           git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD
       - uses: actions/download-artifact@v8
         with:
@@ -171,7 +171,7 @@ jobs:
           merge-multiple: true
       - name: Manifest, test report, notes
         run: |
-          python3 ci/integration/release-notes.py "$GITHUB_REF_NAME" build-ci/dist \
+          python3 ci/scripts/release-notes.py "$GITHUB_REF_NAME" build-ci/dist \
             "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
       - name: Publish
         env:

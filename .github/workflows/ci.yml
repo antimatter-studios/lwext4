@@ -11,7 +11,7 @@ on:
   push:
   pull_request:
   workflow_dispatch:
-  # Other workflows (integration, release) run the same jobs on a given ref.
+  # Other workflows (release) run the same jobs on a given ref.
   workflow_call:
     inputs:
       ref:

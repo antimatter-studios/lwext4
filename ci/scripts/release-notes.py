@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: BSD-3-Clause
-"""Release manifest, test report and notes for a tag on `integration`.
+"""Release manifest, test report and notes for a tag on `main`.
 
 Usage: release-notes.py <tag> <dist dir> <ci run url>
 
-Writes <dist>/MANIFEST.md (upstream base and the commit of every merged
-topic branch, read from the merge commits of the tag), <dist>/TEST-REPORT.md
-(totals of every CTest JUnit file in <dist>) and <dist>/RELEASE-NOTES.md.
-Exits non-zero if any test in the reports failed or errored.
+Writes <dist>/MANIFEST.md (the changes since the previous release tag: the
+pull requests merged into main, or the commits for direct pushes),
+<dist>/TEST-REPORT.md (totals of every CTest JUnit file in <dist>) and
+<dist>/RELEASE-NOTES.md. Exits non-zero if any test in the reports failed
+or errored.
 """
 
 import glob
@@ -22,29 +23,43 @@ def git(*args):
     return subprocess.check_output(("git",) + args, text=True).strip()
 
 
+def previous_tag(tag):
+    """The highest v* tag below <tag> in version order, or None."""
+    tags = git("tag", "--list", "v*", "--sort=-v:refname").splitlines()
+    if tag in tags:
+        tags = tags[tags.index(tag) + 1:]
+    return tags[0] if tags else None
+
+
 def manifest(tag):
-    merges = git("log", "--first-parent", "--merges", "--reverse",
-                 "--format=%H %P%x09%s", tag).splitlines()
+    # Releases before main were tagged on the rebuilt integration branch,
+    # which main does not contain: start at the merge base with the
+    # previous tag rather than at the tag itself.
+    prev = previous_tag(tag)
+    base = git("merge-base", prev, tag) if prev else None
+    rng = "%s..%s" % (base, tag) if base else tag
     rows = []
-    base = None
-    for line in merges:
-        shas, subject = line.split("\t", 1)
-        parts = shas.split()
-        m = re.match(r"Merge branch '([^']+)'", subject)
-        if not m or len(parts) < 3:
+    for rec in git("log", "--first-parent", "--reverse",
+                   "--format=%H%x09%s%x09%b%x00", rng).split("\0"):
+        rec = rec.strip("\n")
+        if not rec:
             continue
-        if base is None:
-            base = parts[1]
-        branch_head = parts[2]
-        rows.append((m.group(1), branch_head[:12],
-                     git("log", "-1", "--format=%s", branch_head)))
-    if base is None:
-        raise SystemExit("%s has no 'Merge branch' commits: not an "
-                         "integration build" % tag)
-    out = ["# lwext4 %s manifest" % tag, "",
-           "Upstream base: gkostka/lwext4 %s (%s)" % (
-               base[:12], git("log", "-1", "--format=%cs %s", base)),
-           "", "| Topic branch | Commit | Subject |", "|---|---|---|"]
+        sha, subject, body = (rec.split("\t", 2) + ["", ""])[:3]
+        m = re.match(r"Merge pull request #(\d+) from [^/]+/(\S+)", subject)
+        b = re.match(r"Merge branch '([^']+)'", subject)
+        if m:
+            title = body.strip().splitlines()[0] if body.strip() else ""
+            rows.append(("#" + m.group(1), m.group(2), title))
+        elif b:
+            head = git("rev-parse", sha + "^2")
+            rows.append((head[:12], b.group(1),
+                         git("log", "-1", "--format=%s", head)))
+        else:
+            rows.append((sha[:12], "", subject))
+    head = ("Changes since %s:" % prev) if prev else ("All changes up to %s:"
+                                                      % tag)
+    out = ["# lwext4 %s manifest" % tag, "", head, "",
+           "| Pull request / commit | Branch | Title |", "|---|---|---|"]
     out += ["| %s | %s | %s |" % r for r in rows]
     return "\n".join(out) + "\n", rows
 
@@ -86,8 +101,8 @@ def main():
     with open(os.path.join(dist, "TEST-REPORT.md"), "w") as f:
         f.write(report)
     notes = [
-        "lwext4 %s: gkostka/lwext4 1.0.0 (master) with the topic branches "
-        "below (each one an upstream pull request) merged." % tag, "",
+        "lwext4 %s: the main branch of antimatter-studios/lwext4, a "
+        "maintained fork of gkostka/lwext4 1.0.0." % tag, "",
         "Every job of the CI matrix passed for this tag: %s" % run_url, "",
         man, report,
         "Licences: the library is BSD-3-Clause except src/ext4_extent.c and "
