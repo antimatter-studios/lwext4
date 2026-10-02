@@ -101,8 +101,10 @@ static void write_and_verify(const size_t *chunks, size_t nchunks,
 
 /*
  * Handle A has written 64 KiB; handle B truncates the file to 4 KiB, leaving
- * A's position beyond EOF. A subsequent 32 KiB write through A must fail
- * cleanly instead of mapping more blocks than it has data for.
+ * A's position beyond EOF. A subsequent 32 KiB write through A must not map
+ * more blocks than it has data for (it read past the end of buf); like a
+ * POSIX write past the end, it writes at A's position and leaves a hole
+ * between 4 KiB and 64 KiB that reads as zeros (fork issue #103).
  */
 static void stale_position_write(void)
 {
@@ -125,16 +127,27 @@ static void stale_position_write(void)
 
 	/* buf is a heap allocation of exactly len bytes: a runaway block
 	 * count makes the device write read past its end. */
-	cnt = 1;
-	TEST_ASSERT_EQ(EINVAL, ext4_fwrite(&a, buf, len, &cnt));
-	TEST_ASSERT_EQ(0, cnt);
-	TEST_ASSERT_EQ(65536, ext4_ftell(&a));
+	TEST_ASSERT_EQ(EOK, ext4_fwrite(&a, buf, len, &cnt));
+	TEST_ASSERT_EQ(len, cnt);
+	TEST_ASSERT_EQ(65536 + len, ext4_ftell(&a));
 	TEST_ASSERT_EQ(EOK, ext4_fclose(&a));
 
 	TEST_ASSERT_EQ(EOK, ext4_fopen(&b, STALE_FILE, "rb"));
-	TEST_ASSERT_EQ(4096, ext4_fsize(&b));
-	TEST_ASSERT_EQ(EOK, ext4_fread(&b, buf, len, &cnt));
+	TEST_ASSERT_EQ(65536 + len, ext4_fsize(&b));
+	TEST_ASSERT_EQ(EOK, ext4_fread(&b, buf, 4096, &cnt));
 	TEST_ASSERT_EQ(4096, cnt);
+	check_pattern(buf, 0, cnt);
+	/* the hole */
+	for (uint64_t off = 4096; off < 65536; off += cnt) {
+		size_t want = len < 65536 - off ? len : (size_t)(65536 - off);
+
+		TEST_ASSERT_EQ(EOK, ext4_fread(&b, buf, want, &cnt));
+		TEST_ASSERT_EQ(want, cnt);
+		for (size_t i = 0; i < cnt; i++)
+			TEST_ASSERT_EQ(0, buf[i]);
+	}
+	TEST_ASSERT_EQ(EOK, ext4_fread(&b, buf, len, &cnt));
+	TEST_ASSERT_EQ(len, cnt);
 	check_pattern(buf, 0, cnt);
 	TEST_ASSERT_EQ(EOK, ext4_fclose(&b));
 	free(buf);

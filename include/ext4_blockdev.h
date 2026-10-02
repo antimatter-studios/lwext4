@@ -248,6 +248,17 @@ int ext4_blocks_set_direct(struct ext4_blockdev *bdev, const void *buf,
 int ext4_block_write_zeroed(struct ext4_blockdev *bdev, uint64_t lba,
 			    uint32_t off, const void *buf, uint32_t len);
 
+/**@brief   Zero len bytes at offset off of a logical block (by direct
+ *          address). Physical blocks the range covers completely are not
+ *          read.
+ * @param   bdev block device descriptor
+ * @param   lba logical block address
+ * @param   off byte offset in the block
+ * @param   len number of bytes (off + len <= block size)
+ * @return  standard error code*/
+int ext4_block_zero_range(struct ext4_blockdev *bdev, uint64_t lba,
+			  uint32_t off, uint32_t len);
+
 /**@brief   Write to block device (by direct address).
  * @param   bdev block device descriptor
  * @param   off byte offset in block device

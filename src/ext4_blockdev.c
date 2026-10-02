@@ -402,6 +402,49 @@ int ext4_block_write_zeroed(struct ext4_blockdev *bdev, uint64_t lba,
 	return r;
 }
 
+int ext4_block_zero_range(struct ext4_blockdev *bdev, uint64_t lba,
+			  uint32_t off, uint32_t len)
+{
+	struct ext4_blockdev_iface *bdif = bdev->bdif;
+	uint32_t ph_bsize = bdif->ph_bsize;
+	uint64_t pba;
+	uint32_t i;
+	int r = EOK;
+
+	if (!bdif->ph_refctr)
+		return EIO;
+
+	if (off + len > bdev->lg_bsize ||
+	    (lba + 1) * bdev->lg_bsize > bdev->part_size)
+		return EINVAL;
+
+	/* Only the physical blocks the range touches; whole ones are not
+	 * read */
+	pba = (lba * bdev->lg_bsize + bdev->part_offset) / ph_bsize;
+	ext4_bdif_lock(bdev);
+	for (i = off / ph_bsize; len && i < bdev->lg_bsize / ph_bsize; i++) {
+		uint32_t start = i * ph_bsize;
+		uint32_t from = off > start ? off - start : 0;
+		uint32_t n = ph_bsize - from < len ? ph_bsize - from : len;
+
+		if (n < ph_bsize) {
+			r = bdif->bread(bdev, bdif->ph_bbuf, pba + i, 1);
+			bdif->bread_ctr++;
+			if (r != EOK)
+				break;
+		}
+		memset(bdif->ph_bbuf + from, 0, n);
+		r = bdif->bwrite(bdev, bdif->ph_bbuf, pba + i, 1);
+		bdif->bwrite_ctr++;
+		if (r != EOK)
+			break;
+		off += n;
+		len -= n;
+	}
+	ext4_bdif_unlock(bdev);
+	return r;
+}
+
 int ext4_block_writebytes(struct ext4_blockdev *bdev, uint64_t off,
 			  const void *buf, uint32_t len)
 {

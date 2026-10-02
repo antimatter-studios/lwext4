@@ -1695,6 +1695,52 @@ int ext4_fclose(ext4_file *file)
 	return EOK;
 }
 
+/* Zero the bytes of the block holding byte <size> of the file from there
+ * to the end of the block: they are after the end of the file, and must
+ * read as zeros if the file grows. */
+static int ext4_zero_tail(struct ext4_inode_ref *ref, uint64_t size)
+{
+	uint32_t block_size = ext4_sb_get_block_size(&ref->fs->sb);
+	uint32_t unalg = (uint32_t)(size % block_size);
+	ext4_fsblk_t fblk;
+	int r;
+
+	if (!unalg)
+		return EOK;
+	r = ext4_fs_get_inode_dblk_idx(ref, (ext4_lblk_t)(size / block_size),
+				       &fblk, true);
+	if (r != EOK || !fblk)
+		return r;
+	return ext4_block_zero_range(ref->fs->bdev, fblk, unalg,
+				     block_size - unalg);
+}
+
+/* A file of 2 GiB or more needs the large_file feature (set, as Linux
+ * does, when such a file appears; the superblock is written at unmount). */
+static void ext4_note_size(struct ext4_fs *fs, uint64_t size)
+{
+	uint32_t v = ext4_get32(&fs->sb, features_read_only);
+
+	if (size > 0x7fffffffULL && !(v & EXT4_FRO_COM_LARGE_FILE))
+		ext4_set32(&fs->sb, features_read_only,
+			   v | EXT4_FRO_COM_LARGE_FILE);
+}
+
+/* Grow the file to <size> (> its size): a hole that reads as zeros. */
+static int ext4_grow_no_lock(ext4_file *file, struct ext4_inode_ref *ref,
+			     uint64_t size)
+{
+	int r = ext4_zero_tail(ref, file->fsize);
+
+	if (r != EOK)
+		return r;
+	ext4_inode_set_size(ref->inode, size);
+	ref->dirty = true;
+	ext4_note_size(&file->mp->fs, size);
+	file->fsize = size;
+	return EOK;
+}
+
 static int ext4_ftruncate_no_lock(ext4_file *file, uint64_t size)
 {
 	struct ext4_inode_ref ref;
@@ -1707,8 +1753,12 @@ static int ext4_ftruncate_no_lock(ext4_file *file, uint64_t size)
 
 	/*Sync file size*/
 	file->fsize = ext4_inode_get_size(&file->mp->fs.sb, ref.inode);
-	if (file->fsize <= size) {
+	if (file->fsize == size) {
 		r = EOK;
+		goto Finish;
+	}
+	if (file->fsize < size) {
+		r = ext4_grow_no_lock(file, &ref, size);
 		goto Finish;
 	}
 
@@ -1722,6 +1772,8 @@ static int ext4_ftruncate_no_lock(ext4_file *file, uint64_t size)
 		file->fsize = size;
 		if (file->fpos > size)
 			file->fpos = size;
+		/* What was after the new end must not come back */
+		r = ext4_zero_tail(&ref, size);
 	}
 
 	/*Stop write back cache mode, also when the truncation failed*/
@@ -1789,8 +1841,11 @@ static int ext4_fread_no_lock(ext4_file *file, void *buf, size_t size,
 	file->fsize = ext4_inode_get_size(sb, ref.inode);
 
 	block_size = ext4_sb_get_block_size(sb);
-	size = ((uint64_t)size > (file->fsize - file->fpos))
-		? ((size_t)(file->fsize - file->fpos)) : size;
+	/* Nothing to read at or past the end */
+	if (file->fpos >= file->fsize)
+		size = 0;
+	else if ((uint64_t)size > file->fsize - file->fpos)
+		size = (size_t)(file->fsize - file->fpos);
 
 	iblock_idx = (uint32_t)((file->fpos) / block_size);
 	iblock_last = (uint32_t)((file->fpos + size) / block_size);
@@ -2025,17 +2080,18 @@ int ext4_fwrite(ext4_file *file, const void *buf, size_t size, size_t *wcnt)
 	block_size = ext4_sb_get_block_size(sb);
 
 	/*
-	 * The file may have been truncated behind this handle's back, leaving
-	 * fpos past EOF. New blocks are appended at i_size, not at fpos, so
-	 * the block loop below would map more blocks than the request covers
-	 * and write past the end of buf. Seeking past EOF is not supported
-	 * either, so refuse the write.
+	 * Writing past the end (after a seek there, or a truncate behind
+	 * this handle's back) first grows the file to fpos, leaving a hole:
+	 * the loop below appends new blocks at i_size, which is fpos then.
 	 */
 	if (file->fpos > file->fsize) {
-		ext4_fs_put_inode_ref(&ref);
-		ext4_trans_abort(file->mp);
-		EXT4_MP_UNLOCK(file->mp);
-		return EINVAL;
+		r = ext4_grow_no_lock(file, &ref, file->fpos);
+		if (r != EOK) {
+			ext4_fs_put_inode_ref(&ref);
+			ext4_trans_abort(file->mp);
+			EXT4_MP_UNLOCK(file->mp);
+			return r;
+		}
 	}
 
 	iblock_last = (uint32_t)((file->fpos + size) / block_size);
@@ -2166,6 +2222,7 @@ out_fsize:
 		file->fsize = file->fpos;
 		ext4_inode_set_size(ref.inode, file->fsize);
 		ref.dirty = true;
+		ext4_note_size(&file->mp->fs, file->fsize);
 	}
 
 	/* Everything up to fpos is written and accounted for: keep it, also
@@ -2198,16 +2255,16 @@ Finish:
 int ext4_fseek(ext4_file *file, int64_t offset, uint32_t origin)
 {
 	switch (origin) {
+	/* Past the end of the file is allowed: a write there leaves a hole */
 	case SEEK_SET:
-		if (offset < 0 || (uint64_t)offset > file->fsize)
+		if (offset < 0)
 			return EINVAL;
 
 		file->fpos = offset;
 		return EOK;
 	case SEEK_CUR:
 		if ((offset < 0 && (uint64_t)(-offset) > file->fpos) ||
-		    (offset > 0 &&
-		     (uint64_t)offset > (file->fsize - file->fpos)))
+		    (offset > 0 && (uint64_t)offset > INT64_MAX - file->fpos))
 			return EINVAL;
 
 		file->fpos += offset;
