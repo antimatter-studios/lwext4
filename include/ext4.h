@@ -634,10 +634,26 @@ int ext4_dir_close(ext4_dir *dir);
 
 /**@brief   Return next directory entry.
  *
+ * Returns NULL both at the end of the directory and when reading the
+ * directory fails; use @ref ext4_dir_entry_get to tell them apart.
+ *
  * @param   dir Directory handle.
  *
  * @return  Directory entry id (NULL if no entry)*/
 const ext4_direntry *ext4_dir_entry_next(ext4_dir *dir);
+
+/**@brief   Get the next directory entry, reporting read errors.
+ *
+ * Sets *entry to the next entry, or to NULL at the end of the directory.
+ * If reading the directory fails, *entry is NULL and the error is returned;
+ * the listing stays at the same position, so calling again retries the
+ * read. The entry stays valid until the next call with the same handle.
+ *
+ * @param   dir   Directory handle.
+ * @param   entry Next directory entry, or NULL at the end.
+ *
+ * @return  Standard error code.*/
+int ext4_dir_entry_get(ext4_dir *dir, const ext4_direntry **entry);
 
 /**@brief   Rewine directory entry offset.
  *
