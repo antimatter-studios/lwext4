@@ -1,0 +1,45 @@
+# SPDX-License-Identifier: BSD-3-Clause
+#
+# What liblwext4.a (Cortex-M0, arm-none-eabi-gcc -O2, default
+# configuration with CONFIG_DEBUG_PRINTF=0 and CONFIG_DEBUG_ASSERT=0)
+# needs on a microcontroller, checked by ci/jobs/embedded-budget.sh:
+#
+#   symbol <name>        every external symbol the library uses: C library
+#                        functions and compiler runtime helpers (e.g. 64-bit
+#                        division). Adding one is a decision for a small
+#                        target (code size, a malloc, printf, ...): list it
+#                        here in the same change. Symbols no longer used
+#                        must be removed.
+#   stack-frame <bytes>  the largest stack frame of a library function. It
+#                        may only be lowered.
+#
+
+# Memory: the block cache, the journal and the htree code allocate (see
+# CONFIG_USE_USER_MALLOC and tests/test_memory.c).
+symbol malloc
+symbol calloc
+symbol free
+
+# Memory and strings
+symbol memcpy
+symbol memmove
+symbol memset
+symbol memcmp
+symbol strcmp
+symbol strncmp
+symbol strcpy
+symbol strncpy
+symbol strlen
+
+# Sorting the entries of a directory block when an htree node splits
+symbol qsort
+
+# Compiler runtime: Cortex-M0 has no divide instruction; 64-bit sizes and
+# block numbers need 64-bit multiplication and division.
+symbol __aeabi_uidiv
+symbol __aeabi_uidivmod
+symbol __aeabi_uldivmod
+symbol __aeabi_lmul
+
+# ext4_mkfs() holds the most on the stack.
+stack-frame 312
