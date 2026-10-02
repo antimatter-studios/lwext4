@@ -205,6 +205,18 @@ Blocks are allocated dynamically. Previous versions of library could work withou
 malloc but from 1.0.0 dynamic memory allocation is required. However, block cache
 should not allocate more than CONFIG_BLOCK_DEV_CACHE_SIZE blocks.
 
+With `CONFIG_USE_USER_MALLOC=1` the library calls `ext4_user_malloc`,
+`ext4_user_calloc`, `ext4_user_realloc` and `ext4_user_free` instead, e.g.
+to give it a fixed pool. `tests/test_memory.c` records every allocation of
+typical workloads (mkfs, mount, small and large files, a 1500 entry
+directory, xattrs, mixed churn), checks for leaks and replays them through a
+simple first-fit allocator on a fixed area, as a microcontroller heap. With
+16 block cache buffers on a 64-bit host the busiest workload needs a 23KB
+heap with 1KB blocks and 87KB with 4KB blocks; first-fit fragmentation costs
+up to 4% (1KB blocks) and 12% (4KB blocks) over the peak. The test fails if
+a workload leaks or needs more than the ceilings in
+`tests/test_memory_budget.h`.
+
 Supported ext2/3/4 features
 =====
 incompatible:
