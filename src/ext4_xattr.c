@@ -1631,6 +1631,15 @@ int ext4_xattr_set(struct ext4_inode_ref *inode_ref, uint8_t name_index,
 		}
 	}
 
+	/* As Linux does: a filesystem with attributes has the ext_attr
+	 * feature, without it e2fsprogs ignores them (the superblock is
+	 * written at unmount). */
+	if (ret == EOK && !ext4_sb_feature_com(&fs->sb, EXT4_FCOM_EXT_ATTR)) {
+		uint32_t v = ext4_get32(&fs->sb, features_compatible);
+
+		ext4_set32(&fs->sb, features_compatible, v | EXT4_FCOM_EXT_ATTR);
+	}
+
 out:
 	return ret;
 }
