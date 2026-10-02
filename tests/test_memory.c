@@ -25,6 +25,11 @@
  *              workload for 1 and 20 rounds; if ff-min grows with the
  *              rounds, fragmentation accumulates over time.
  *
+ * Every file is written with a pattern derived from its seed and the byte
+ * offset, and what a workload keeps (files, truncated and renamed files,
+ * appends, xattr values) is read back and compared, so the workloads also
+ * check that the data survives.
+ *
  * The test fails if a workload leaks, or if its peak or ff-min exceeds the
  * ceiling in test_memory_budget.h. Ceilings are measured on a 64-bit
  * (LP64) host, where lwext4's structures are largest, with the block cache
@@ -206,20 +211,70 @@ static void path_of(char *buf, size_t len, const char *dir, unsigned i)
 	snprintf(buf, len, TEST_MP "%s/file-%05u", dir, i);
 }
 
-static void write_file(const char *path, size_t size, const char *mode)
+/* Byte <off> of the file with seed <seed>. */
+static uint8_t pattern(uint32_t seed, uint64_t off)
+{
+	return (uint8_t)((off * 131u + seed * 7u + (off >> 9)) ^ (seed >> 3));
+}
+
+static void fill(uint32_t seed, uint64_t off, size_t len)
+{
+	size_t k;
+
+	for (k = 0; k < len; k++)
+		data[k] = (char)pattern(seed, off + k);
+}
+
+/* Write bytes [start, start + size) of the file with seed <seed>; mode "ab"
+ * appends to a file that has <start> bytes. */
+static void write_file(const char *path, uint32_t seed, uint64_t start,
+		       size_t size, const char *mode)
 {
 	ext4_file f;
 	size_t done = 0, n;
 
 	CHECK(ext4_fopen(&f, path, mode));
+	TEST_ASSERT_EQ(start, ext4_ftell(&f));
 	while (done < size) {
 		size_t chunk = size - done < sizeof(data) ? size - done
 							  : sizeof(data);
 
+		fill(seed, start + done, chunk);
 		CHECK(ext4_fwrite(&f, data, chunk, &n));
 		TEST_ASSERT_EQ(chunk, n);
 		done += chunk;
 	}
+	CHECK(ext4_fclose(&f));
+}
+
+/* The file must hold exactly <size> bytes of the pattern of <seed>. */
+static void verify_file(const char *path, uint32_t seed, uint64_t size)
+{
+	static char got[sizeof(data)];
+	ext4_file f;
+	uint64_t done = 0;
+	size_t n, k;
+
+	CHECK(ext4_fopen(&f, path, "rb"));
+	TEST_ASSERT_EQ(size, ext4_fsize(&f));
+	while (done < size) {
+		size_t chunk = size - done < sizeof(got) ? (size_t)(size - done)
+							 : sizeof(got);
+
+		CHECK(ext4_fread(&f, got, chunk, &n));
+		TEST_ASSERT_EQ(chunk, n);
+		for (k = 0; k < chunk; k++)
+			if ((uint8_t)got[k] != pattern(seed, done + k)) {
+				fprintf(stderr, "%s: byte %llu is 0x%02x, "
+					"expected 0x%02x\n", path,
+					(unsigned long long)(done + k),
+					(uint8_t)got[k], pattern(seed, done + k));
+				exit(1);
+			}
+		done += chunk;
+	}
+	CHECK(ext4_fread(&f, got, 1, &n));
+	TEST_ASSERT_EQ(0, n);
 	CHECK(ext4_fclose(&f));
 }
 
@@ -261,15 +316,22 @@ static void w_small_files(void)
 	char path[64];
 	unsigned i;
 
+	static size_t size[300];
+
 	mount_fs();
 	CHECK(ext4_dir_mk(TEST_MP "small"));
 	for (i = 0; i < 300; i++) {
 		path_of(path, sizeof(path), "small", i);
-		write_file(path, rng() % 6000, "wb");
+		size[i] = rng() % 6000;
+		write_file(path, i, 0, size[i], "wb");
 	}
 	for (i = 0; i < 300; i += 2) {
 		path_of(path, sizeof(path), "small", i);
 		CHECK(ext4_fremove(path));
+	}
+	for (i = 1; i < 300; i += 2) {
+		path_of(path, sizeof(path), "small", i);
+		verify_file(path, i, size[i]);
 	}
 	umount_fs();
 }
@@ -277,19 +339,14 @@ static void w_small_files(void)
 static void w_large_file(void)
 {
 	ext4_file f;
-	size_t n, done;
 
 	mount_fs();
-	write_file(TEST_MP "large", 3u * 1024u * 1024u, "wb");
-	CHECK(ext4_fopen(&f, TEST_MP "large", "rb"));
-	for (done = 0; done < 3u * 1024u * 1024u; done += n) {
-		CHECK(ext4_fread(&f, data, sizeof(data), &n));
-		TEST_ASSERT(n > 0);
-	}
-	CHECK(ext4_fclose(&f));
+	write_file(TEST_MP "large", 1, 0, 3u * 1024u * 1024u, "wb");
+	verify_file(TEST_MP "large", 1, 3u * 1024u * 1024u);
 	CHECK(ext4_fopen(&f, TEST_MP "large", "r+b"));
 	CHECK(ext4_ftruncate(&f, 65536));
 	CHECK(ext4_fclose(&f));
+	verify_file(TEST_MP "large", 1, 65536);
 	CHECK(ext4_fremove(TEST_MP "large"));
 	umount_fs();
 }
@@ -304,7 +361,7 @@ static void w_directory(void)
 	CHECK(ext4_dir_mk(TEST_MP "big"));
 	for (i = 0; i < 1500; i++) {
 		path_of(path, sizeof(path), "big", i);
-		write_file(path, 0, "wb");
+		write_file(path, i, 0, 0, "wb");
 	}
 	CHECK(ext4_dir_open(&d, TEST_MP "big"));
 	while (ext4_dir_entry_next(&d))
@@ -324,22 +381,35 @@ static void w_xattr(void)
 	char path[64], name[16], list[256];
 	static char buf[512];
 	unsigned i, j;
-	size_t n;
+	size_t n, size[4];
 
 	mount_fs();
 	CHECK(ext4_dir_mk(TEST_MP "xattr"));
 	for (i = 0; i < 64; i++) {
 		path_of(path, sizeof(path), "xattr", i);
-		write_file(path, 100, "wb");
+		write_file(path, i, 0, 100, "wb");
 		for (j = 0; j < 4; j++) {
 			snprintf(name, sizeof(name), "user.a%u", j);
+			size[j] = 16 + (rng() % 200);
+			fill(i * 4 + j, 0, size[j]);
 			CHECK(ext4_setxattr(path, name, strlen(name), data,
-					    16 + (rng() % 200)));
+					    size[j]));
 		}
-		CHECK(ext4_getxattr(path, "user.a1", 7, buf, sizeof(buf), &n));
 		CHECK(ext4_listxattr(path, list, sizeof(list), &n));
+		TEST_ASSERT_EQ(4 * sizeof("user.a0"), n);
 		CHECK(ext4_removexattr(path, "user.a0", 7));
 		CHECK(ext4_removexattr(path, "user.a2", 7));
+		for (j = 1; j < 4; j += 2) {
+			snprintf(name, sizeof(name), "user.a%u", j);
+			CHECK(ext4_getxattr(path, name, strlen(name), buf,
+					    sizeof(buf), &n));
+			TEST_ASSERT_EQ(size[j], n);
+			fill(i * 4 + j, 0, size[j]);
+			TEST_ASSERT(!memcmp(buf, data, n));
+		}
+		TEST_ASSERT_EQ(ENODATA, ext4_getxattr(path, "user.a0", 7, buf,
+						      sizeof(buf), &n));
+		verify_file(path, i, 100);
 	}
 	umount_fs();
 }
@@ -348,10 +418,13 @@ static void w_xattr(void)
  * deleted, a fifth of them kept, round after round. */
 static void churn(unsigned rounds)
 {
+	static size_t size[20 * 40];
 	char path[64], path2[64];
 	unsigned r, i, next = 0;
+	size_t log_size = 0, add;
 	ext4_file f;
 
+	TEST_ASSERT(rounds <= 20);
 	mount_fs();
 	CHECK(ext4_dir_mk(TEST_MP "churn"));
 	for (r = 0; r < rounds; r++) {
@@ -359,9 +432,13 @@ static void churn(unsigned rounds)
 
 		for (i = 0; i < 40; i++, next++) {
 			path_of(path, sizeof(path), "churn", next);
-			write_file(path, rng() % 20000, "wb");
+			size[next] = rng() % 20000;
+			write_file(path, next, 0, size[next], "wb");
 		}
-		write_file(TEST_MP "churn/log", 1000 + rng() % 3000, "ab");
+		add = 1000 + rng() % 3000;
+		write_file(TEST_MP "churn/log", 999999, log_size, add,
+			   log_size ? "ab" : "wb");
+		log_size += add;
 		for (i = first; i < next; i++) {
 			path_of(path, sizeof(path), "churn", i);
 			switch (i % 5) {
@@ -371,12 +448,17 @@ static void churn(unsigned rounds)
 				path_of(path2, sizeof(path2), "churn",
 					100000 + i);
 				CHECK(ext4_frename(path, path2));
+				verify_file(path2, i, size[i]);
 				CHECK(ext4_fremove(path2));
 				break;
 			case 2:
-				CHECK(ext4_fopen(&f, path, "r+b"));
-				CHECK(ext4_ftruncate(&f, 100));
-				CHECK(ext4_fclose(&f));
+				if (size[i] > 100) {
+					CHECK(ext4_fopen(&f, path, "r+b"));
+					CHECK(ext4_ftruncate(&f, 100));
+					CHECK(ext4_fclose(&f));
+					size[i] = 100;
+				}
+				verify_file(path, i, size[i]);
 				CHECK(ext4_fremove(path));
 				break;
 			default:
@@ -385,6 +467,11 @@ static void churn(unsigned rounds)
 			}
 		}
 	}
+	for (i = 0; i < next; i += 5) {
+		path_of(path, sizeof(path), "churn", i);
+		verify_file(path, i, size[i]);
+	}
+	verify_file(TEST_MP "churn/log", 999999, log_size);
 	umount_fs();
 }
 
