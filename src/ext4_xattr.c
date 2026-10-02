@@ -1357,7 +1357,7 @@ static int ext4_xattr_block_set(struct ext4_inode_ref *inode_ref,
 				struct ext4_xattr_info *i,
 				bool no_insert)
 {
-	int ret = EOK;
+	int ret = EOK, rr;
 	bool allocated = false;
 	struct ext4_fs *fs = inode_ref->fs;
 	struct ext4_block block, new_block;
@@ -1404,7 +1404,10 @@ static int ext4_xattr_block_set(struct ext4_inode_ref *inode_ref,
 						      header);
 			ext4_trans_set_block_dirty(block.buf);
 		}
-		ext4_block_set(fs->bdev, &block);
+		/* Writes the attribute block (write-through) */
+		rr = ext4_block_set(fs->bdev, &block);
+		if (ret == EOK)
+			ret = rr;
 		if (ret != EOK)
 			ext4_xattr_try_free_block(inode_ref);
 

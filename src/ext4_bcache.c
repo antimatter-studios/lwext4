@@ -270,6 +270,7 @@ int ext4_bcache_alloc(struct ext4_bcache *bc, struct ext4_block *b,
 int ext4_bcache_free(struct ext4_bcache *bc, struct ext4_block *b)
 {
 	struct ext4_buf *buf = b->buf;
+	int r = EOK;
 
 	ext4_assert(bc && b);
 
@@ -296,7 +297,10 @@ int ext4_bcache_free(struct ext4_bcache *bc, struct ext4_block *b)
 			    !ext4_bcache_test_flag(buf, BC_TMP))
 				ext4_bcache_insert_dirty_node(bc, buf);
 			else {
-				ext4_block_flush_buf(bc->bdev, buf);
+				/* Write-through: the block is written now, and a
+				 * failure is the caller's (the buffer stays dirty
+				 * and is written again later). */
+				r = ext4_block_flush_buf(bc->bdev, buf);
 				ext4_bcache_clear_flag(buf, BC_FLUSH);
 			}
 		}
@@ -311,7 +315,7 @@ int ext4_bcache_free(struct ext4_bcache *bc, struct ext4_block *b)
 	b->lb_id = 0;
 	b->data = 0;
 
-	return EOK;
+	return r;
 }
 
 bool ext4_bcache_is_full(struct ext4_bcache *bc)
