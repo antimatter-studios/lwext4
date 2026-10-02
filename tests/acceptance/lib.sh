@@ -9,7 +9,9 @@
 #   EMU    optional emulator command line for the lwext4 binaries, e.g.
 #          "qemu-s390x -L /usr/s390x-linux-gnu". e2fsprogs always run on
 #          the host and act as the independent oracle.
-#   WORK   scratch directory (default: build_acceptance/<build dir>/<script>)
+#   WORK   scratch directory for the disk images (default:
+#          tmp/acceptance/<build dir>/<script> in the worktree), deleted when
+#          the script ends unless LWEXT4_KEEP_TEST_IMAGES is set
 
 PATH="$PATH:/sbin:/usr/sbin"
 export PATH
@@ -22,7 +24,7 @@ case "$BUILD" in
 *) BUILD="$TOP_DIR/$BUILD" ;;
 esac
 EMU=${EMU:-}
-WORK=${WORK:-$TOP_DIR/build_acceptance/$(basename "$BUILD")/$(basename "$0" .sh)}
+WORK=${WORK:-$TOP_DIR/tmp/acceptance/$(basename "$BUILD")/$(basename "$0" .sh)}
 
 ACC="$BUILD/tests/acceptance/lwext4-acceptance"
 GENERIC="$BUILD/fs_test/lwext4-generic"
@@ -33,6 +35,10 @@ CLIENT="$BUILD/fs_test/lwext4-client"
 
 rm -rf "$WORK"
 mkdir -p "$WORK"
+if [ -z "${LWEXT4_KEEP_TEST_IMAGES:-}" ]; then
+	trap 'rc=$?; rm -rf "$WORK"; exit $rc' EXIT
+	trap 'exit 130' INT TERM
+fi
 
 CHECKS=0
 

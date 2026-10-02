@@ -30,9 +30,16 @@ if [ -f "$mkfs_tool.exe" ]; then # Windows build, run by e.g. "wine"
 	mkfs_tool="$mkfs_tool.exe"
 	generic_tool="$generic_tool.exe"
 fi
-work="$build/roundtrip"
+# Disk images in tmp/ of the worktree, deleted when the script ends unless
+# LWEXT4_KEEP_TEST_IMAGES is set
+top=$(cd "$(dirname "$0")/../.." && pwd)
+work="$top/tmp/roundtrip/$(basename "$build")"
 rm -rf "$work"
 mkdir -p "$work"
+if [ -z "${LWEXT4_KEEP_TEST_IMAGES:-}" ]; then
+	trap 'rc=$?; rm -rf "$work"; exit $rc' EXIT
+	trap 'exit 130' INT TERM
+fi
 
 failed=0
 passed=0

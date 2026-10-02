@@ -241,7 +241,8 @@ stop_server()
 		SERVER_PID=
 	fi
 }
-trap stop_server EXIT
+# Also delete the disk images, as lib.sh's own EXIT trap would
+trap 'rc=$?; stop_server; [ -n "${LWEXT4_KEEP_TEST_IMAGES:-}" ] || rm -rf "$WORK"; exit $rc' EXIT
 
 # server_session <port> <server options...>
 server_session()
