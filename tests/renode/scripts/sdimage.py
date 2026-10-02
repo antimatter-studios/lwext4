@@ -226,8 +226,9 @@ def check_workload(fs, big_kib):
         out, err = fs.debugfs("ea_get /fw/big.bin user.lwext4")
         expect(b"renode" in out, "xattr user.lwext4: %r %s" % (out, err))
     else:
-        # ext4_mkfs does not set the ext_attr feature, e2fsprogs then
-        # ignores the (in-inode) attribute lwext4 stored.
+        # Without the ext_attr feature e2fsprogs ignores the attribute
+        # lwext4 stored. ext4_mkfs and ext4_setxattr set it since fork
+        # issue #98, so only older images get here.
         print("note: no ext_attr feature, xattr not checked on the host")
 
 

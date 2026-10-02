@@ -17,21 +17,23 @@
 #
 #   ci/run.sh red-green [base ref]
 #
-# The base defaults to the merge base with the foundation branch
-# tests/harness (origin/tests/harness, fork/tests/harness or a local
-# tests/harness). A branch that adds no tests passes trivially.
+# The base defaults to the merge base with main (origin/main, fork/main
+# or a local main), else with the foundation branch tests/harness (the
+# base of the upstream pull requests). A branch that adds no tests passes
+# trivially, and so does main itself.
 . ci/scripts/common.sh
 
 base_ref=${1:-}
 if [ -z "$base_ref" ]; then
-	for r in origin/tests/harness fork/tests/harness tests/harness; do
+	for r in origin/main fork/main main \
+	    origin/tests/harness fork/tests/harness tests/harness; do
 		if git rev-parse -q --verify "$r^{commit}" >/dev/null; then
 			base_ref=$r
 			break
 		fi
 	done
 fi
-[ -n "$base_ref" ] || { echo "no base ref (fetch tests/harness)" >&2; exit 2; }
+[ -n "$base_ref" ] || { echo "no base ref (fetch main)" >&2; exit 2; }
 base=$(git merge-base HEAD "$base_ref")
 echo "base: $base_ref, merge base $(git log -1 --format='%h %s' "$base")"
 
