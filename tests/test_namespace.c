@@ -191,7 +191,11 @@ static void symlinks(void)
 	TEST_ASSERT_EQ(EOK, ext4_fsymlink("now/fast", TEST_MP "was_slow"));
 	TEST_ASSERT_EQ(ENOENT, ext4_readlink(TEST_MP "nope", buf, sizeof(buf),
 					     &r));
-	TEST_ASSERT_EQ(EINVAL, ext4_readlink(TEST_MP "slow", NULL, 0, &r));
+	/* No buffer and no size: the length of the target */
+	r = 0;
+	TEST_ASSERT_EQ(EOK, ext4_readlink(TEST_MP "slow", NULL, 0, &r));
+	TEST_ASSERT_EQ(strlen(target), r);
+	TEST_ASSERT_EQ(EINVAL, ext4_readlink(TEST_MP "slow", NULL, 1, &r));
 }
 
 static void special_files(void)

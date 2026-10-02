@@ -2800,7 +2800,8 @@ Finish:
 	return r;
 }
 
-int ext4_readlink(const char *path, char *buf, size_t bufsize, size_t *rcnt)
+int ext4_readlink_at(const char *path, uint64_t offset, char *buf,
+		     size_t bufsize, size_t *rcnt)
 {
 	struct ext4_mountpoint *mp = ext4_get_mount(path);
 	int r;
@@ -2810,7 +2811,8 @@ int ext4_readlink(const char *path, char *buf, size_t bufsize, size_t *rcnt)
 	if (!mp)
 		return ENOENT;
 
-	if (!buf)
+	/* buf == NULL with bufsize == 0 asks for the length of the target */
+	if (!buf && (bufsize || !rcnt))
 		return EINVAL;
 
 	filetype = EXT4_DE_SYMLINK;
@@ -2818,10 +2820,15 @@ int ext4_readlink(const char *path, char *buf, size_t bufsize, size_t *rcnt)
 	EXT4_MP_LOCK(mp);
 	ext4_block_cache_write_back(mp->fs.bdev, 1);
 	r = ext4_generic_open2(&f, path, O_RDONLY, filetype, NULL, NULL);
-	if (r == EOK)
-		r = ext4_fread_no_lock(&f, buf, bufsize, rcnt);
-	else
+	if (r != EOK)
 		goto Finish;
+
+	if (!buf) {
+		*rcnt = (size_t)f.fsize;
+	} else {
+		f.fpos = offset;
+		r = ext4_fread_no_lock(&f, buf, bufsize, rcnt);
+	}
 
 	ext4_fclose(&f);
 
@@ -2829,6 +2836,11 @@ Finish:
 	r = ext4_write_back_end(mp, mp->fs.bdev, r);
 	EXT4_MP_UNLOCK(mp);
 	return r;
+}
+
+int ext4_readlink(const char *path, char *buf, size_t bufsize, size_t *rcnt)
+{
+	return ext4_readlink_at(path, 0, buf, bufsize, rcnt);
 }
 
 static int ext4_mknod_set(ext4_file *f, uint32_t dev)

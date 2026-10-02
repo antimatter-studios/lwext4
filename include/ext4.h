@@ -516,13 +516,38 @@ int ext4_mknod(const char *path, int filetype, uint32_t dev);
 
 /**@brief Read symbolic link payload.
  *
+ * Reads at most bufsize bytes of the link target; the target is not NUL
+ * terminated. A target longer than bufsize is truncated: pass buf = NULL
+ * and bufsize = 0 to get its length in rcnt, or read the rest with
+ * @ref ext4_readlink_at.
+ *
  * @param path    Path to symlink.
- * @param buf     Output buffer.
+ * @param buf     Output buffer, or NULL (with bufsize 0) to get the length
+ *                of the target.
  * @param bufsize Output buffer max size.
- * @param rcnt    Bytes read.
+ * @param rcnt    Bytes read, or the length of the target if buf is NULL.
  *
  * @return  Standard error code.*/
 int ext4_readlink(const char *path, char *buf, size_t bufsize, size_t *rcnt);
+
+/**@brief Read part of a symbolic link payload, starting at offset.
+ *
+ * Like @ref ext4_readlink, but reads from byte offset of the target, so a
+ * target can be read in pieces into a small buffer. Reading at or past the
+ * end of the target returns EOK with rcnt 0. With buf = NULL and
+ * bufsize = 0, rcnt is set to the length of the whole target (offset is
+ * ignored).
+ *
+ * @param path    Path to symlink.
+ * @param offset  Byte offset in the target to start reading at.
+ * @param buf     Output buffer, or NULL (with bufsize 0) to get the length
+ *                of the target.
+ * @param bufsize Output buffer max size.
+ * @param rcnt    Bytes read, or the length of the target if buf is NULL.
+ *
+ * @return  Standard error code.*/
+int ext4_readlink_at(const char *path, uint64_t offset, char *buf,
+		     size_t bufsize, size_t *rcnt);
 
 /**@brief Set extended attribute.
  *
