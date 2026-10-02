@@ -2,9 +2,7 @@
 # env: coverage
 # Line and branch coverage of the library (src/) reached by the CTest suite
 # and the e2fsprogs round trip. Prints a per-file table, writes an HTML
-# report and fails if the totals drop below ci/coverage-floor, or below
-# ci/coverage-floor.integration where that exists (the integration branch,
-# whose merged tests reach more than any single branch).
+# report and fails if the totals drop below ci/coverage-floor.
 #
 #   ci/run.sh coverage
 #
@@ -51,7 +49,5 @@ gcovr --root . --filter 'src/' "$build" \
 	--html-details "$out/report/index.html" \
 	--html-title "lwext4 coverage" \
 	--json-summary "$out/coverage.json" --json-summary-pretty
-floor=ci/coverage-floor
-[ -f ci/coverage-floor.integration ] && floor=ci/coverage-floor.integration
 python3 ci/scripts/coverage-report.py "$out/coverage.json" \
-	"$floor" "$out/summary.md"
+	ci/coverage-floor "$out/summary.md"

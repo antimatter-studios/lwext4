@@ -1,24 +1,23 @@
 > **This is antimatter-studios/lwext4, a maintained fork of
 > [gkostka/lwext4](https://github.com/gkostka/lwext4).**
 >
-> - **Relation to upstream.** Every change lives on a topic branch that is
->   also an upstream pull request. The `integration` branch is upstream
->   `master` with all of them merged, rebuilt mechanically from
->   [`ci/integration/branches.txt`](ci/integration/branches.txt) by
->   `ci/integration/rebuild.sh` (a merge conflict fails the rebuild). The
->   foundation branch `tests/harness` (gkostka/lwext4#102: regression test
->   harness, container CI) comes first; each fix branch builds on it and
->   carries a regression test that CI proves fails without the fix and
->   passes with it (`ci/run.sh red-green`).
-> - **Releases** are tagged on `integration` as `v<next upstream
->   patch>-am.<n>`, e.g. `v1.0.1-am.1`: a valid SemVer pre-release that sorts
+> - **Relation to upstream.** Development happens here: bugs and work are
+>   tracked in this repository's issues, fixes are pull requests into
+>   `main`, and `main` is what the releases are built from (see
+>   [CONTRIBUTING.md](CONTRIBUTING.md)). Upstream has not merged anything
+>   since 2022; the changes up to v1.0.1-am.3 are also open upstream pull
+>   requests. Every fix carries a regression test that CI proves fails
+>   without the fix and passes with it (`ci/run.sh red-green`).
+> - **Releases** are tagged on `main` as `v<next upstream
+>   patch>-am.<n>`, e.g. `v1.0.1-am.4`: a valid SemVer pre-release that sorts
 >   after upstream `v1.0.0`, before a future upstream `v1.0.1`, and counts
 >   our builds with `am.<n>`. A tag runs the whole CI matrix, builds the
 >   packages (Linux x86_64/arm64/armhf/i686/riscv64/ppc64le/s390x/powerpc/
 >   mips, Windows x86_64, Cortex-M; example firmware for ESP32/ESP32-C3/
 >   ESP32-S3, the bare-metal SD card boards and Zephyr on mps2/an385) and
 >   publishes them, with test results
->   and a manifest of the included branches, only if every job passed.
+>   and a manifest of the changes since the previous release, only if every
+>   job passed.
 > - **Licensing** is unchanged: the library is BSD-3-Clause
 >   ([LICENSE](LICENSE)) except `src/ext4_extent.c` and `src/ext4_xattr.c`,
 >   which are GPL-2.0 (see their headers). New files take the licence of
@@ -27,8 +26,7 @@
 > - **Reproducing CI locally** needs only docker: every CI job runs in a
 >   container defined in [`ci/`](ci/README.md), e.g.
 >   `ci/run.sh --list`, `ci/run.sh native asan-ubsan`,
->   `ci/run.sh qemu-user s390x`, `ci/run.sh avr`,
->   `ci/run.sh integration-rebuild`.
+>   `ci/run.sh qemu-user s390x`, `ci/run.sh avr`.
 
 [![Join the chat at https://gitter.im/gkostka/lwext4](https://badges.gitter.im/gkostka/lwext4.svg)](https://gitter.im/gkostka/lwext4?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 [![License (GPL v2.0)](https://img.shields.io/badge/license-GPL%20(v2.0)-blue.svg?style=flat-square)](http://opensource.org/licenses/GPL-2.0)
@@ -135,7 +133,7 @@ More examples:
 * ESP32, ESP32-C3 and ESP32-S3 (ESP-IDF): an lwext4 component with block
   devices for SPI flash partitions and SD cards, and an example firmware
   that CI runs in Espressif's QEMU:
-  [examples/esp-idf in antimatter-studios/lwext4](https://github.com/antimatter-studios/lwext4/tree/integration/examples/esp-idf).
+  [examples/esp-idf in antimatter-studios/lwext4](https://github.com/antimatter-studios/lwext4/tree/main/examples/esp-idf).
 * Bare metal on microcontroller boards (ST NUCLEO-F401RE, NUCLEO-G071RB,
   NUCLEO-L552ZE-Q, Nordic nRF52840 DK) with a micro SD card on SPI, no
   vendor SDK or RTOS: a firmware that CI runs on the emulated boards in
