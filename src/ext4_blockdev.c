@@ -355,6 +355,48 @@ int ext4_blocks_set_direct(struct ext4_blockdev *bdev, const void *buf,
 	return ext4_bdif_bwrite(bdev, buf, pba, pb_cnt * cnt);
 }
 
+int ext4_block_write_zeroed(struct ext4_blockdev *bdev, uint64_t lba,
+			    uint32_t off, const void *buf, uint32_t len)
+{
+	struct ext4_blockdev_iface *bdif = bdev->bdif;
+	uint32_t ph_bsize = bdif->ph_bsize;
+	uint32_t count = bdev->lg_bsize / ph_bsize;
+	const uint8_t *p = buf;
+	uint64_t pba;
+	uint32_t i;
+	int r = EOK;
+
+	ext4_assert(bdev && (buf || !len));
+
+	if (!bdif->ph_refctr)
+		return EIO;
+
+	if (off + len > bdev->lg_bsize ||
+	    (lba + 1) * bdev->lg_bsize > bdev->part_size)
+		return EINVAL;
+
+	/* One physical block at a time through the interface's buffer: no
+	 * allocation, and nothing is read */
+	pba = (lba * bdev->lg_bsize + bdev->part_offset) / ph_bsize;
+	ext4_bdif_lock(bdev);
+	for (i = 0; i < count; i++) {
+		uint32_t start = i * ph_bsize, end = start + ph_bsize;
+		uint32_t from = off > start ? off : start;
+		uint32_t to = off + len < end ? off + len : end;
+
+		memset(bdif->ph_bbuf, 0, ph_bsize);
+		if (from < to)
+			memcpy(bdif->ph_bbuf + (from - start), p + (from - off),
+			       to - from);
+		r = bdif->bwrite(bdev, bdif->ph_bbuf, pba + i, 1);
+		bdif->bwrite_ctr++;
+		if (r != EOK)
+			break;
+	}
+	ext4_bdif_unlock(bdev);
+	return r;
+}
+
 int ext4_block_writebytes(struct ext4_blockdev *bdev, uint64_t off,
 			  const void *buf, uint32_t len)
 {

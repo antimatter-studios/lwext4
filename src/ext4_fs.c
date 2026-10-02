@@ -1655,11 +1655,37 @@ int ext4_fs_get_inode_dblk_idx(struct ext4_inode_ref *inode_ref,
 						   false, support_unwritten);
 }
 
+static int ext4_fs_set_inode_data_block_index(struct ext4_inode_ref *inode_ref,
+				       ext4_lblk_t iblock, ext4_fsblk_t fblock);
+
 int ext4_fs_init_inode_dblk_idx(struct ext4_inode_ref *inode_ref,
 				ext4_lblk_t iblock, ext4_fsblk_t *fblock)
 {
-	return ext4_fs_get_inode_dblk_idx_internal(inode_ref, iblock, fblock,
-						   true, true);
+	ext4_fsblk_t goal, phys_block;
+	int rc;
+
+	/* Extents allocate the block of a hole (and zero an unwritten
+	 * one) here */
+	rc = ext4_fs_get_inode_dblk_idx_internal(inode_ref, iblock, fblock,
+						 true, true);
+	if (rc != EOK || *fblock)
+		return rc;
+
+	/* A hole in a block mapped file: allocate its block, so that the
+	 * caller does not write to block 0 */
+	rc = ext4_fs_indirect_find_goal(inode_ref, &goal);
+	if (rc != EOK)
+		return rc;
+	rc = ext4_balloc_alloc_block(inode_ref, goal, &phys_block);
+	if (rc != EOK)
+		return rc;
+	rc = ext4_fs_set_inode_data_block_index(inode_ref, iblock, phys_block);
+	if (rc != EOK) {
+		ext4_balloc_free_block(inode_ref, phys_block);
+		return rc;
+	}
+	*fblock = phys_block;
+	return EOK;
 }
 
 static int ext4_fs_set_inode_data_block_index(struct ext4_inode_ref *inode_ref,

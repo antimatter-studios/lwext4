@@ -226,6 +226,18 @@ int ext4_blocks_get_direct(struct ext4_blockdev *bdev, void *buf, uint64_t lba,
 int ext4_blocks_set_direct(struct ext4_blockdev *bdev, const void *buf,
 			   uint64_t lba, uint32_t cnt);
 
+/**@brief   Write a whole logical block (by direct address): len bytes
+ *          of buf at offset off of the block, zeros in the rest of it.
+ *          Nothing is read, nothing is allocated.
+ * @param   bdev block device descriptor
+ * @param   lba logical block address
+ * @param   off byte offset in the block
+ * @param   buf input buffer
+ * @param   len length of the write buffer (off + len <= block size)
+ * @return  standard error code*/
+int ext4_block_write_zeroed(struct ext4_blockdev *bdev, uint64_t lba,
+			    uint32_t off, const void *buf, uint32_t len);
+
 /**@brief   Write to block device (by direct address).
  * @param   bdev block device descriptor
  * @param   off byte offset in block device
