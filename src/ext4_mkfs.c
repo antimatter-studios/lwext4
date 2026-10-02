@@ -779,6 +779,10 @@ int ext4_mkfs(struct ext4_fs *fs, struct ext4_blockdev *bd,
 		break;
 	}
 
+	/* Extended attributes, as mke2fs sets by default: without the
+	 * feature e2fsprogs ignores the attributes lwext4 stores. */
+	info->feat_compat |= EXT4_FCOM_EXT_ATTR;
+
 	/*TODO: handle this features some day...*/
 	info->feat_incompat &= ~EXT4_FINCOM_META_BG;
 	info->feat_incompat &= ~EXT4_FINCOM_FLEX_BG;
