@@ -532,15 +532,27 @@ static int __ext4_journal_stop(const char *mount_point)
 	if (!mp)
 		return ENOENT;
 
-	if (mp->fs.read_only)
+	/* Read only, unless the journal failed during this session
+	 * (jbd_journal::error), which makes the filesystem read only */
+	if (mp->fs.read_only && !mp->fs.jbd_journal)
 		return EOK;
 
 	if (ext4_sb_feature_com(&mp->fs.sb,
 				EXT4_FCOM_HAS_JOURNAL)) {
 		/* If the journalled blocks cannot all be written, the
 		 * journal stays in use (and marked for replay), so that
-		 * ext4_journal_stop() can be called again. */
+		 * ext4_journal_stop() can be called again. After the
+		 * journal failed that cannot succeed: the session ends
+		 * without writing the journal, which stays marked for
+		 * replay. */
 		r = jbd_journal_stop(&mp->jbd_journal);
+		if (r != EOK && mp->jbd_journal.error != EOK) {
+			mp->jbd_fs.dirty = false;
+			jbd_put_fs(&mp->jbd_fs);
+			mp->fs.jbd_journal = NULL;
+			mp->fs.jbd_fs = NULL;
+			goto Finish;
+		}
 		if (r != EOK)
 			goto Finish;
 
@@ -624,6 +636,10 @@ static int __ext4_trans_start(struct ext4_mountpoint *mp)
 	if (mp->fs.jbd_journal && !mp->fs.curr_trans) {
 		struct jbd_journal *journal = mp->fs.jbd_journal;
 		struct jbd_trans *trans;
+
+		if (journal->error != EOK)
+			return journal->error;
+
 		trans = jbd_journal_new_trans(journal);
 		if (!trans) {
 			r = ENOMEM;
@@ -820,6 +836,21 @@ static bool ext4_parse_flags(const char *flags, uint32_t *file_flags)
 	return false;
 }
 
+/* Leave write-back mode (flushing the delayed blocks) and return the first
+ * error: r if the operation failed, else the error of writing a block.
+ * With a running journal the flushed blocks are committed, so a failed
+ * write keeps its transaction in the journal and the next mount replays
+ * it: that is not the operation's error. */
+static int ext4_write_back_end(struct ext4_mountpoint *mp,
+			       struct ext4_blockdev *bdev, int r)
+{
+	int rw = ext4_block_cache_write_back(bdev, 0);
+
+	if (mp->fs.jbd_journal)
+		rw = EOK;
+	return r != EOK ? r : rw;
+}
+
 static int ext4_trunc_inode(struct ext4_mountpoint *mp,
 			    uint32_t index, uint64_t new_size)
 {
@@ -858,8 +889,11 @@ static int ext4_trunc_inode(struct ext4_mountpoint *mp,
 		return ext4_fs_put_inode_ref(&inode_ref);
 	}
 
-	if (has_trans)
-		ext4_trans_stop(mp);
+	if (has_trans) {
+		r = ext4_trans_stop(mp);
+		if (r != EOK)
+			goto Finish;
+	}
 
 	while (inode_size > new_size + CONFIG_MAX_TRUNCATE_SIZE) {
 
@@ -869,7 +903,7 @@ static int ext4_trunc_inode(struct ext4_mountpoint *mp,
 		r = ext4_fs_get_inode_ref(fs, index, &inode_ref);
 		if (r != EOK) {
 			ext4_trans_abort(mp);
-			break;
+			goto Finish;
 		}
 		r = ext4_fs_truncate_inode(&inode_ref, inode_size);
 		if (r != EOK)
@@ -880,8 +914,10 @@ static int ext4_trunc_inode(struct ext4_mountpoint *mp,
 		if (r != EOK) {
 			ext4_trans_abort(mp);
 			goto Finish;
-		} else
-			ext4_trans_stop(mp);
+		}
+		r = ext4_trans_stop(mp);
+		if (r != EOK)
+			goto Finish;
 	}
 
 	if (inode_size > new_size) {
@@ -903,7 +939,7 @@ static int ext4_trunc_inode(struct ext4_mountpoint *mp,
 		if (r != EOK)
 			ext4_trans_abort(mp);
 		else
-			ext4_trans_stop(mp);
+			r = ext4_trans_stop(mp);
 
 	}
 
@@ -1040,7 +1076,10 @@ static int ext4_generic_open2(ext4_file *f, const char *path, int flags,
 				break;
 			}
 
-			ext4_fs_put_inode_ref(&child_ref);
+			/* Writes the new inode (write-through) */
+			r = ext4_fs_put_inode_ref(&child_ref);
+			if (r != EOK)
+				break;
 			continue;
 		}
 
@@ -1152,7 +1191,7 @@ static int ext4_generic_open(ext4_file *f, const char *path, const char *flags,
 
 	if (iflags & O_CREAT) {
 		if (r == EOK)
-			ext4_trans_stop(mp);
+			r = ext4_trans_stop(mp);
 		else
 			ext4_trans_abort(mp);
 	}
@@ -1353,13 +1392,17 @@ int ext4_flink(const char *path, const char *hardlink_path)
 	r = ext4_create_hardlink(hardlink_path, &child_ref, false);
 
 Finish:
-	if (child_loaded)
-		ext4_fs_put_inode_ref(&child_ref);
+	if (child_loaded) {
+		int rr = ext4_fs_put_inode_ref(&child_ref);
+
+		if (r == EOK)
+			r = rr;
+	}
 
 	if (r != EOK)
 		ext4_trans_abort(mp);
 	else
-		ext4_trans_stop(mp);
+		r = ext4_trans_stop(mp);
 
 	EXT4_MP_UNLOCK(mp);
 	return r;
@@ -1418,16 +1461,24 @@ int ext4_frename(const char *path, const char *new_path)
 		goto Finish;
 
 Finish:
-	if (parent_loaded)
-		ext4_fs_put_inode_ref(&parent_ref);
+	if (parent_loaded) {
+		int rr = ext4_fs_put_inode_ref(&parent_ref);
 
-	if (child_loaded)
-		ext4_fs_put_inode_ref(&child_ref);
+		if (r == EOK)
+			r = rr;
+	}
+
+	if (child_loaded) {
+		int rr = ext4_fs_put_inode_ref(&child_ref);
+
+		if (r == EOK)
+			r = rr;
+	}
 
 	if (r != EOK)
 		ext4_trans_abort(mp);
 	else
-		ext4_trans_stop(mp);
+		r = ext4_trans_stop(mp);
 
 	EXT4_MP_UNLOCK(mp);
 	return r;
@@ -1482,7 +1533,7 @@ int ext4_fremove(const char *path)
 	uint32_t child_inode;
 	uint32_t name_off;
 	bool is_goal;
-	int r;
+	int r, rr;
 	int len;
 	struct ext4_inode_ref child;
 	struct ext4_inode_ref parent;
@@ -1536,7 +1587,7 @@ int ext4_fremove(const char *path)
 	if (ext4_inode_get_links_cnt(child.inode) == 1) {
 		ext4_block_cache_write_back(mp->fs.bdev, 1);
 		r = ext4_trunc_inode(mp, child.index, 0);
-		ext4_block_cache_write_back(mp->fs.bdev, 0);
+		r = ext4_write_back_end(mp, mp->fs.bdev, r);
 		if (r != EOK) {
 			ext4_fs_put_inode_ref(&parent);
 			ext4_fs_put_inode_ref(&child);
@@ -1566,13 +1617,17 @@ int ext4_fremove(const char *path)
 	}
 
 Finish:
-	ext4_fs_put_inode_ref(&child);
-	ext4_fs_put_inode_ref(&parent);
+	rr = ext4_fs_put_inode_ref(&child);
+	if (r == EOK)
+		r = rr;
+	rr = ext4_fs_put_inode_ref(&parent);
+	if (r == EOK)
+		r = rr;
 
 	if (r != EOK)
 		ext4_trans_abort(mp);
 	else
-		ext4_trans_stop(mp);
+		r = ext4_trans_stop(mp);
 
 	EXT4_MP_UNLOCK(mp);
 	return r;
@@ -1590,7 +1645,7 @@ int ext4_fopen(ext4_file *file, const char *path, const char *flags)
 
 	ext4_block_cache_write_back(mp->fs.bdev, 1);
 	r = ext4_generic_open(file, path, flags, true, 0, 0);
-	ext4_block_cache_write_back(mp->fs.bdev, 0);
+	r = ext4_write_back_end(mp, mp->fs.bdev, r);
 
 	EXT4_MP_UNLOCK(mp);
 	return r;
@@ -1617,12 +1672,12 @@ int ext4_fopen2(ext4_file *file, const char *path, int flags)
 
 	if (flags & O_CREAT) {
 		if (r == EOK)
-			ext4_trans_stop(mp);
+			r = ext4_trans_stop(mp);
 		else
 			ext4_trans_abort(mp);
 	}
 
-	ext4_block_cache_write_back(mp->fs.bdev, 0);
+	r = ext4_write_back_end(mp, mp->fs.bdev, r);
 	EXT4_MP_UNLOCK(mp);
 
 	return r;
@@ -1643,7 +1698,7 @@ int ext4_fclose(ext4_file *file)
 static int ext4_ftruncate_no_lock(ext4_file *file, uint64_t size)
 {
 	struct ext4_inode_ref ref;
-	int r;
+	int r, rr;
 
 
 	r = ext4_fs_get_inode_ref(&file->mp->fs, file->inode, &ref);
@@ -1670,10 +1725,12 @@ static int ext4_ftruncate_no_lock(ext4_file *file, uint64_t size)
 	}
 
 	/*Stop write back cache mode, also when the truncation failed*/
-	ext4_block_cache_write_back(file->mp->fs.bdev, 0);
+	r = ext4_write_back_end(file->mp, file->mp->fs.bdev, r);
 
 Finish:
-	ext4_fs_put_inode_ref(&ref);
+	rr = ext4_fs_put_inode_ref(&ref);
+	if (r == EOK)
+		r = rr;
 	return r;
 
 }
@@ -1696,7 +1753,7 @@ int ext4_ftruncate(ext4_file *f, uint64_t size)
 	if (r != EOK)
 		ext4_trans_abort(f->mp);
 	else
-		ext4_trans_stop(f->mp);
+		r = ext4_trans_stop(f->mp);
 
 	EXT4_MP_UNLOCK(f->mp);
 	return r;
@@ -1932,6 +1989,7 @@ int ext4_fwrite(ext4_file *file, const void *buf, size_t size, size_t *wcnt)
 	const uint8_t *u8_buf = buf;
 	int r, rr = EOK;
 	bool commit = false;
+	uint64_t fpos0, fsize0;
 
 	ext4_assert(file && file->mp);
 
@@ -1962,6 +2020,8 @@ int ext4_fwrite(ext4_file *file, const void *buf, size_t size, size_t *wcnt)
 
 	/*Sync file size*/
 	file->fsize = ext4_inode_get_size(sb, ref.inode);
+	fpos0 = file->fpos;
+	fsize0 = file->fsize;
 	block_size = ext4_sb_get_block_size(sb);
 
 	/*
@@ -2070,7 +2130,7 @@ int ext4_fwrite(ext4_file *file, const void *buf, size_t size, size_t *wcnt)
 	}
 
 	/*Stop write back cache mode*/
-	ext4_block_cache_write_back(file->mp->fs.bdev, 0);
+	r = ext4_write_back_end(file->mp, file->mp->fs.bdev, r);
 
 	/* No more blocks: keep what was written */
 	if (r != EOK && r == rr)
@@ -2117,9 +2177,18 @@ Finish:
 	if (r == EOK)
 		r = rr;
 
-	if (commit && rr == EOK)
-		ext4_trans_stop(file->mp);
-	else
+	if (commit && rr == EOK) {
+		/* A commit that fails rolls the write back: nothing of it
+		 * counts. */
+		rr = ext4_trans_stop(file->mp);
+		if (rr != EOK) {
+			r = rr;
+			file->fpos = fpos0;
+			file->fsize = fsize0;
+			if (wcnt)
+				*wcnt = 0;
+		}
+	} else
 		ext4_trans_abort(file->mp);
 
 	EXT4_MP_UNLOCK(file->mp);
@@ -2195,7 +2264,7 @@ static int ext4_trans_put_inode_ref(struct ext4_mountpoint *mp,
 	if (r != EOK)
 		ext4_trans_abort(mp);
 	else
-		ext4_trans_stop(mp);
+		r = ext4_trans_stop(mp);
 
 	return r;
 }
@@ -2630,7 +2699,7 @@ static int ext4_fsymlink_set(ext4_file *f, const void *buf, uint32_t size)
 Finish:
 	/*Stop write back cache mode, also on errors*/
 	if (write_back)
-		ext4_block_cache_write_back(f->mp->fs.bdev, 0);
+		r = ext4_write_back_end(f->mp, f->mp->fs.bdev, r);
 
 	ext4_fs_put_inode_ref(&ref);
 	return r;
@@ -2667,9 +2736,9 @@ Finish:
 	if (r != EOK)
 		ext4_trans_abort(mp);
 	else
-		ext4_trans_stop(mp);
+		r = ext4_trans_stop(mp);
 
-	ext4_block_cache_write_back(mp->fs.bdev, 0);
+	r = ext4_write_back_end(mp, mp->fs.bdev, r);
 	EXT4_MP_UNLOCK(mp);
 	return r;
 }
@@ -2700,7 +2769,7 @@ int ext4_readlink(const char *path, char *buf, size_t bufsize, size_t *rcnt)
 	ext4_fclose(&f);
 
 Finish:
-	ext4_block_cache_write_back(mp->fs.bdev, 0);
+	r = ext4_write_back_end(mp, mp->fs.bdev, r);
 	EXT4_MP_UNLOCK(mp);
 	return r;
 }
@@ -2778,9 +2847,9 @@ Finish:
 	if (r != EOK)
 		ext4_trans_abort(mp);
 	else
-		ext4_trans_stop(mp);
+		r = ext4_trans_stop(mp);
 
-	ext4_block_cache_write_back(mp->fs.bdev, 0);
+	r = ext4_write_back_end(mp, mp->fs.bdev, r);
 	EXT4_MP_UNLOCK(mp);
 	return r;
 }
@@ -2790,7 +2859,7 @@ int ext4_setxattr(const char *path, const char *name, size_t name_len,
 		  const void *data, size_t data_size)
 {
 	bool found;
-	int r = EOK;
+	int r = EOK, rr;
 	ext4_file f;
 	uint32_t inode;
 	uint8_t name_index;
@@ -2828,12 +2897,14 @@ int ext4_setxattr(const char *path, const char *name, size_t name_len,
 	r = ext4_xattr_set(&inode_ref, name_index, dissected_name,
 			dissected_len, data, data_size);
 
-	ext4_fs_put_inode_ref(&inode_ref);
+	rr = ext4_fs_put_inode_ref(&inode_ref);
+	if (r == EOK)
+		r = rr;
 Finish:
 	if (r != EOK)
 		ext4_trans_abort(mp);
 	else
-		ext4_trans_stop(mp);
+		r = ext4_trans_stop(mp);
 
 	EXT4_MP_UNLOCK(mp);
 	return r;
@@ -3005,7 +3076,7 @@ Finish:
 	if (r != EOK)
 		ext4_trans_abort(mp);
 	else
-		ext4_trans_stop(mp);
+		r = ext4_trans_stop(mp);
 
 	EXT4_MP_UNLOCK(mp);
 	return r;
@@ -3215,7 +3286,7 @@ End:
 			if (r != EOK)
 				ext4_trans_abort(mp);
 			else
-				ext4_trans_stop(mp);
+				r = ext4_trans_stop(mp);
 		}
 
 		if (dir_end) {
@@ -3288,10 +3359,10 @@ End:
 		if (r != EOK)
 			ext4_trans_abort(mp);
 		else
-			ext4_trans_stop(mp);
+			r = ext4_trans_stop(mp);
 	}
 
-	ext4_block_cache_write_back(mp->fs.bdev, 0);
+	r = ext4_write_back_end(mp, mp->fs.bdev, r);
 	EXT4_MP_UNLOCK(mp);
 
 	return r;

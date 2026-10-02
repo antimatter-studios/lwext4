@@ -1329,6 +1329,7 @@ int jbd_journal_start(struct jbd_fs *jbd_fs,
 	 * plus 1.
 	 */
 	journal->trans_id = jbd_get32(&jbd_fs->sb, sequence) + 1;
+	journal->error = EOK;
 	journal->alloc_trans_id = journal->trans_id;
 
 	journal->block_size = jbd_get32(&jbd_fs->sb, blocksize);
@@ -1349,6 +1350,10 @@ static void jbd_trans_end_write(struct ext4_bcache *bc __unused,
 			  struct ext4_buf *buf __unused,
 			  int res,
 			  void *arg);
+static inline void
+jbd_trans_remove_block_rec(struct jbd_journal *journal,
+			   struct jbd_block_rec *block_rec,
+			   struct jbd_trans *trans);
 
 /*
  * This routine is only suitable to committed transactions.
@@ -1464,6 +1469,50 @@ jbd_journal_purge_cp_trans(struct jbd_journal *journal,
 	return EOK;
 }
 
+/*
+ * Free a committed transaction after the journal failed, without writing
+ * anything: it stays in the journal for replay. Committed transactions hold
+ * no references on their buffers, and a jbd_buf may have forgotten its
+ * buffer (jbd_trans_restore_failed()), so buffers are looked up by block
+ * number, only to stop them from calling back into the journal; what they
+ * hold is committed and may still be written.
+ */
+static void jbd_journal_discard_trans(struct jbd_journal *journal,
+				      struct jbd_trans *trans)
+{
+	struct ext4_fs *fs = journal->jbd_fs->inode_ref.fs;
+	struct jbd_buf *jbd_buf, *tmp;
+	struct jbd_revoke_rec *rec, *tmp2;
+	struct jbd_block_rec *block_rec, *tmp3;
+
+	TAILQ_FOREACH_SAFE(jbd_buf, &trans->buf_queue, buf_node, tmp) {
+		struct ext4_block block = EXT4_BLOCK_ZERO();
+		struct ext4_buf *buf;
+
+		buf = ext4_bcache_find_get(fs->bdev->bc, &block,
+					   jbd_buf->block_rec->lba);
+		if (buf) {
+			if (buf->end_write == jbd_trans_end_write &&
+			    buf->end_write_arg == jbd_buf) {
+				buf->end_write = NULL;
+				buf->end_write_arg = NULL;
+			}
+			ext4_block_set(fs->bdev, &block);
+		}
+		TAILQ_REMOVE(&jbd_buf->block_rec->dirty_buf_queue, jbd_buf,
+			     dirty_buf_node);
+		TAILQ_REMOVE(&trans->buf_queue, jbd_buf, buf_node);
+		ext4_free(jbd_buf);
+	}
+	RB_FOREACH_SAFE(rec, jbd_revoke_tree, &trans->revoke_root, tmp2) {
+		RB_REMOVE(jbd_revoke_tree, &trans->revoke_root, rec);
+		ext4_free(rec);
+	}
+	LIST_FOREACH_SAFE(block_rec, &trans->tbrec_list, tbrec_node, tmp3)
+		jbd_trans_remove_block_rec(journal, block_rec, trans);
+	ext4_free(trans);
+}
+
 /**@brief  Stop accessing the journal.
  * @param  journal current journal session
  * @return standard error code*/
@@ -1472,6 +1521,19 @@ int jbd_journal_stop(struct jbd_journal *journal)
 	int r;
 	struct jbd_fs *jbd_fs = journal->jbd_fs;
 	uint32_t features_incompatible;
+
+	/* The blocks in the cache cannot be trusted any more: drop the
+	 * transactions without writing anything. The journal stays marked
+	 * for replay, which restores everything that was committed. */
+	if (journal->error != EOK) {
+		struct jbd_trans *trans;
+
+		while ((trans = TAILQ_FIRST(&journal->cp_queue)) != NULL) {
+			TAILQ_REMOVE(&journal->cp_queue, trans, trans_node);
+			jbd_journal_discard_trans(journal, trans);
+		}
+		return journal->error;
+	}
 
 	/* Make sure that journalled content have reached
 	 * the disk. If some of it cannot be written, the journal
@@ -1591,6 +1653,43 @@ jbd_trans_insert_block_rec(struct jbd_trans *trans,
 /*
  * This routine will do the dirty works.
  */
+/*
+ * The committed version of a block of an aborted transaction cannot be put
+ * back into the cache (reading its journal copy failed, or an earlier
+ * failure already stopped the journal). The cache holds the aborted
+ * contents: they must neither reach the disk nor be read again, so the
+ * buffer loses its dirty and up-to-date state and is dropped when its
+ * last user releases it.
+ *
+ * The block goes back to the transaction that committed it. That
+ * transaction holds no reference on the buffer (committed transactions
+ * rely on their buffers staying dirty), so its jbd_buf forgets the buffer:
+ * the block is never written in this session, the transaction never
+ * completes and stays in the journal, and replaying the journal at the
+ * next mount writes the committed version. The filesystem makes no more
+ * changes (read only) until then.
+ */
+static void jbd_trans_restore_failed(struct jbd_journal *journal,
+				     struct jbd_block_rec *block_rec,
+				     struct jbd_buf *jbd_buf, int r)
+{
+	struct ext4_fs *fs = journal->jbd_fs->inode_ref.fs;
+	struct ext4_block block = EXT4_BLOCK_ZERO();
+	struct ext4_buf *buf;
+
+	buf = ext4_bcache_find_get(fs->bdev->bc, &block, block_rec->lba);
+	if (buf) {
+		ext4_bcache_invalidate_buf(fs->bdev->bc, buf);
+		ext4_bcache_clear_flag(buf, BC_UPTODATE);
+		ext4_block_set(fs->bdev, &block);
+	}
+	memset(&jbd_buf->block, 0, sizeof(jbd_buf->block));
+	jbd_trans_change_ownership(block_rec, jbd_buf->trans);
+	if (journal->error == EOK)
+		journal->error = r;
+	fs->read_only = true;
+}
+
 static void
 jbd_trans_finish_callback(struct jbd_journal *journal,
 			  const struct jbd_trans *trans,
@@ -1625,15 +1724,24 @@ jbd_trans_finish_callback(struct jbd_journal *journal,
 				jbd_buf_dirty);
 		if (jbd_buf) {
 			if (!revoke) {
-				int r;
-				r = ext4_block_get_noread(fs->bdev,
+				int r = journal->error;
+
+				if (r == EOK)
+					r = ext4_block_get_noread(fs->bdev,
 							&block,
 							block_rec->lba);
-				ext4_assert(r == EOK);
-				r = jbd_block_get(journal->jbd_fs,
+				if (r == EOK) {
+					r = jbd_block_get(journal->jbd_fs,
 							&jbd_block,
 							jbd_buf->jbd_lba);
-				ext4_assert(r == EOK);
+					if (r != EOK)
+						ext4_block_set(fs->bdev, &block);
+				}
+				if (r != EOK) {
+					jbd_trans_restore_failed(journal,
+							block_rec, jbd_buf, r);
+					return;
+				}
 				memcpy(block.data, jbd_block.data,
 						journal->block_size);
 
