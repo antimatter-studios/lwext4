@@ -3477,34 +3477,48 @@ int ext4_dir_close(ext4_dir *dir)
     return ext4_fclose(&dir->f);
 }
 
-const ext4_direntry *ext4_dir_entry_next(ext4_dir *dir)
-{
 #define EXT4_DIR_ENTRY_OFFSET_TERM (uint64_t)(-1)
 
+int ext4_dir_entry_get(ext4_dir *dir, const ext4_direntry **entry)
+{
 	int r;
 	uint16_t name_length;
-	ext4_direntry *de = 0;
+	uint64_t next_off;
 	struct ext4_inode_ref dir_inode;
 	struct ext4_dir_iter it;
+
+	if (!entry)
+		return EINVAL;
+
+	*entry = NULL;
 
 	EXT4_MP_LOCK(dir->f.mp);
 
 	if (dir->next_off == EXT4_DIR_ENTRY_OFFSET_TERM) {
 		EXT4_MP_UNLOCK(dir->f.mp);
-		return 0;
+		return EOK;
 	}
 
 	r = ext4_fs_get_inode_ref(&dir->f.mp->fs, dir->f.inode, &dir_inode);
+	if (r != EOK)
+		goto Finish;
+
+	/* On an error next_off stays, so the same read is tried again by the
+	 * next call. */
+	r = ext4_dir_iterator_init(&it, &dir_inode, dir->next_off);
+	if (r == EOK && it.curr && ext4_dir_en_get_inode(it.curr) == 0)
+		r = ext4_dir_iterator_next(&it); /* Skip a deleted entry */
 	if (r != EOK) {
+		ext4_dir_iterator_fini(&it);
+		ext4_fs_put_inode_ref(&dir_inode);
 		goto Finish;
 	}
 
-	r = ext4_dir_iterator_init(&it, &dir_inode, dir->next_off);
-	if (r != EOK || !it.curr) {
-		/* Corrupted entry or no entry at all (e.g. empty directory):
-		 * either way, there is nothing more to return. */
+	if (!it.curr) {
+		/* End of the directory */
 		dir->next_off = EXT4_DIR_ENTRY_OFFSET_TERM;
-		ext4_fs_put_inode_ref(&dir_inode);
+		ext4_dir_iterator_fini(&it);
+		r = ext4_fs_put_inode_ref(&dir_inode);
 		goto Finish;
 	}
 
@@ -3520,17 +3534,31 @@ const ext4_direntry *ext4_dir_entry_next(ext4_dir *dir)
 	dir->de.inode_type = ext4_dir_en_get_inode_type(&dir->f.mp->fs.sb,
 						      it.curr);
 
-	de = &dir->de;
-
-	ext4_dir_iterator_next(&it);
-
-	dir->next_off = it.curr ? it.curr_off : EXT4_DIR_ENTRY_OFFSET_TERM;
+	/* Find the next entry now, so that the end of the directory is known
+	 * as soon as the last entry is returned. If that fails, the entry is
+	 * still returned and the next call reports the error, reading again
+	 * from just after this entry. */
+	next_off = it.curr_off + dir->de.entry_length;
+	if (ext4_dir_iterator_next(&it) == EOK)
+		next_off = it.curr ? it.curr_off : EXT4_DIR_ENTRY_OFFSET_TERM;
+	dir->next_off = next_off;
+	*entry = &dir->de;
 
 	ext4_dir_iterator_fini(&it);
-	ext4_fs_put_inode_ref(&dir_inode);
+	r = ext4_fs_put_inode_ref(&dir_inode);
 
 Finish:
 	EXT4_MP_UNLOCK(dir->f.mp);
+	return r;
+}
+
+const ext4_direntry *ext4_dir_entry_next(ext4_dir *dir)
+{
+	const ext4_direntry *de;
+
+	if (ext4_dir_entry_get(dir, &de) != EOK)
+		return NULL;
+
 	return de;
 }
 

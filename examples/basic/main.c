@@ -96,11 +96,17 @@ static void list_dir(const char *path)
 
 	printf("%s:\n", path);
 	CHECK(ext4_dir_open(&d, path));
-	/* Entries come in on-disk order, including "." and ".." */
-	while ((de = ext4_dir_entry_next(&d)) != NULL)
+	/* Entries come in on-disk order, including "." and "..".
+	 * ext4_dir_entry_get() sets de to NULL at the end of the directory
+	 * and returns an error if reading it fails. */
+	for (;;) {
+		CHECK(ext4_dir_entry_get(&d, &de));
+		if (!de)
+			break;
 		printf("  %-5s %.*s\n",
 		       de->inode_type == EXT4_DE_DIR ? "dir" : "file",
 		       (int)de->name_length, (const char *)de->name);
+	}
 	CHECK(ext4_dir_close(&d));
 }
 
