@@ -14,8 +14,12 @@
 name: macOS
 
 on:
+  # Pull requests into main, and main after a merge (release tags run the
+  # workflows through release.yml; other branches by hand).
   push:
+    branches: [main]
   pull_request:
+    branches: [main]
   workflow_dispatch:
 
 concurrency:

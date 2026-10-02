@@ -723,14 +723,16 @@ static int ext4_dir_dx_next_block(struct ext4_inode_ref *inode_ref,
 
 		p++;
 
-		/* Don't forget to put old block (prevent memory leak) */
+		/* Don't forget to put old block (prevent memory leak); the
+		 * new one goes into the path also if that fails, so that the
+		 * caller releases it */
 		r = ext4_block_set(inode_ref->fs->bdev, &p->b);
-		if (r != EOK)
-			return r;
 
 		memcpy(&p->b, &b, sizeof(b));
 		p->entries = ((struct ext4_dir_idx_node *)b.data)->entries;
 		p->position = p->entries;
+		if (r != EOK)
+			return r;
 	}
 
 	return ENOENT;
@@ -780,11 +782,13 @@ int ext4_dir_dx_find_entry(struct ext4_dir_search_result *result,
 	struct ext4_dir_idx_block *dx_block;
 	struct ext4_dir_idx_block *tmp;
 
+	/* EXT4_ERR_BAD_DX_DIR for a damaged tree, which the caller then
+	 * searches linearly; an I/O error is the caller's error */
 	rc = ext4_dir_dx_get_leaf(&hinfo, inode_ref, &root_block, &dx_block,
 				  dx_blocks);
 	if (rc != EOK) {
 		ext4_block_set(fs->bdev, &root_block);
-		return EXT4_ERR_BAD_DX_DIR;
+		return rc;
 	}
 
 	do {
@@ -832,9 +836,11 @@ int ext4_dir_dx_find_entry(struct ext4_dir_search_result *result,
 			goto cleanup;
 
 		/* check if the next block could be checked */
+		/* EOK: no more blocks, ENOENT: the next block is loaded,
+		 * anything else is an error (not "not found") */
 		rc = ext4_dir_dx_next_block(inode_ref, hinfo.hash, dx_block,
 					    &dx_blocks[0]);
-		if (rc < 0)
+		if (rc != EOK && rc != ENOENT)
 			goto cleanup;
 	} while (rc == ENOENT);
 
@@ -1295,11 +1301,13 @@ int ext4_dir_dx_add_entry(struct ext4_inode_ref *parent,
 	struct ext4_dir_idx_block *dx_blk;
 	struct ext4_dir_idx_block *dx_it;
 
+	/* EXT4_ERR_BAD_DX_DIR for a damaged tree; an I/O error must not
+	 * make the caller drop the index */
 	r = ext4_dir_dx_get_leaf(&hinfo, parent, &root_blk, &dx_blk, dx_blks);
 	if (r != EOK) {
 		/* No path was set up, only the root is held */
 		ext4_block_set(fs->bdev, &root_blk);
-		return EXT4_ERR_BAD_DX_DIR;
+		return r;
 	}
 
 	/* Try to insert to existing data block */
