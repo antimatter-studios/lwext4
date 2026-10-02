@@ -11,6 +11,12 @@ work="$3"
 
 rm -rf "$work"
 mkdir -p "$work"
+# Deleted when the script ends (tests/run_test.sh does the same for the
+# other tests) unless LWEXT4_KEEP_TEST_IMAGES is set
+if [ -z "${LWEXT4_KEEP_TEST_IMAGES:-}" ]; then
+	trap 'rc=$?; rm -rf "$work"; exit $rc' EXIT
+	trap 'exit 130' INT TERM
+fi
 
 "$cmake" --install "$build" --prefix "$work/prefix" > "$work/install.log"
 

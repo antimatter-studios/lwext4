@@ -4,6 +4,12 @@ cmake_minimum_required(VERSION 3.4)
 option(LWEXT4_BUILD_TESTS "Build the regression tests (generic, bare-metal and simulator targets)" ON)
 set(LWEXT4_SANITIZE "" CACHE STRING
     "Comma separated -fsanitize= list for all targets, e.g. address,undefined")
+# Extra compiler flags, appended after the toolchain's (which set the
+# flags in the cache), e.g. -fstack-usage for ci/jobs/embedded-budget.sh.
+set(LWEXT4_EXTRA_C_FLAGS "" CACHE STRING "Extra C compiler flags")
+if(LWEXT4_EXTRA_C_FLAGS)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${LWEXT4_EXTRA_C_FLAGS}")
+endif()
 if(LWEXT4_SANITIZE)
     set(SANITIZE_FLAGS "-fsanitize=${LWEXT4_SANITIZE} -fno-omit-frame-pointer")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${SANITIZE_FLAGS}")

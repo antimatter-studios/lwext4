@@ -8,6 +8,10 @@
 # it runs after the test succeeded, on the host, with the image path as $1.
 # It verifies what lwext4 wrote with independent tools (e2fsck, debugfs);
 # common/check.sh has helpers for that.
+#
+# <work dir> (tmp/tests/... in the worktree, see CMakeLists.txt) holds the
+# test's disk images; it is deleted when the test finishes, passed or failed,
+# unless LWEXT4_KEEP_TEST_IMAGES is set (to look at the images of a failure).
 set -e
 
 setup="$1"
@@ -16,6 +20,10 @@ shift 2
 
 rm -rf "$work"
 mkdir -p "$work"
+if [ -z "${LWEXT4_KEEP_TEST_IMAGES:-}" ]; then
+	trap 'rc=$?; rm -rf "$work"; exit $rc' EXIT
+	trap 'exit 130' INT TERM
+fi
 img="$work/image"
 check="${setup%.sh}.check.sh"
 
@@ -34,11 +42,8 @@ if [ -f "$setup" ]; then
 	)
 fi
 
-if [ ! -f "$check" ]; then
-	exec "$@" "$img"
-fi
-
 "$@" "$img"
+[ -f "$check" ] || exit 0
 (
 	PATH="$PATH:/sbin:/usr/sbin"
 	set -- "$img"
