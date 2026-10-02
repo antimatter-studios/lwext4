@@ -16,13 +16,14 @@
  * The sequence is fixed by a seed, so a failure reproduces: it prints the
  * seed, the image, the operation number and the last operations.
  * LWEXT4_FSX_SEED and LWEXT4_FSX_OPS (operations per image) change the
- * defaults for longer local runs.
+ * defaults for longer local runs, LWEXT4_FSX_TRACE=1 prints every
+ * operation, LWEXT4_FSX_CHECK_EACH=1 reads the changed file back completely
+ * after every operation (slow: to find the operation that breaks a file).
  *
  * It runs on each image the setup script made: ext4 with 1 KiB and 4 KiB
  * blocks (extents, journal), ext4 without the journal and ext2 (block
- * maps). lwext4 cannot seek past the end of a file (EINVAL) and
- * ext4_ftruncate() does not grow files, so writes start at most at the
- * end of a file and truncates only shrink.
+ * maps). Writes may start past the end of a file and truncates may grow
+ * it (fork issue #103): both leave holes, which must read as zeros.
  *
  * red-green: guard (an exerciser, not the test of a fix: it passes on any
  * base that keeps the data intact)
@@ -87,9 +88,16 @@ static struct {
 	size_t off, len;
 } oplog[LOG_SIZE];
 
+static int trace, check_each;
+
 static void log_op(enum op op, int file, size_t off, size_t len)
 {
 	unsigned i = (unsigned)(op_no % LOG_SIZE);
+
+	if (trace)
+		printf("%6lu %-8s file %d off %lu len %lu\n", op_no,
+		       op_names[op], file, (unsigned long)off,
+		       (unsigned long)len);
 
 	oplog[i].no = op_no;
 	oplog[i].op = op;
@@ -145,6 +153,8 @@ static void do_write(int i, size_t off, size_t len, enum op op)
 	ext4_file f;
 	size_t k, n;
 
+	if (off > MAX_SIZE)
+		off = MAX_SIZE;
 	if (off + len > MAX_SIZE)
 		len = MAX_SIZE - off;
 	log_op(op, i, off, len);
@@ -156,6 +166,9 @@ static void do_write(int i, size_t off, size_t len, enum op op)
 	if (n != len)
 		fail("%s: wrote %llu of %llu bytes", m->path, n, len);
 	CHECK(ext4_fclose(&f), m->path);
+	/* A hole between the old end and the write reads as zeros */
+	if (off > m->size)
+		memset(m->data + m->size, 0, off - m->size);
 	memcpy(m->data + off, iobuf, len);
 	if (off + len > m->size)
 		m->size = off + len;
@@ -176,7 +189,8 @@ static void compare(const struct mfile *m, size_t off, const uint8_t *got,
 static void do_read(int i, size_t off, size_t len)
 {
 	struct mfile *m = &files[i];
-	size_t want = off + len > m->size ? m->size - off : len, n;
+	size_t want = off >= m->size ? 0
+		      : off + len > m->size ? m->size - off : len, n;
 	ext4_file f;
 
 	log_op(OP_READ, i, off, len);
@@ -204,6 +218,8 @@ static void do_truncate(int i, size_t size)
 		fail("%s: size %llu after truncate to %llu", m->path,
 		     ext4_fsize(&f), size);
 	CHECK(ext4_fclose(&f), m->path);
+	if (size > m->size)
+		memset(m->data + m->size, 0, size - m->size);
 	m->size = size;
 }
 
@@ -336,17 +352,25 @@ static void run(const char *image, unsigned long ops)
 			mount_image(image);
 			verify_all();
 		} else if (k < 35) {
-			do_write(fi, rnd(m->size + 1), len, OP_WRITE);
+			do_write(fi, rnd(m->size + 16384), len, OP_WRITE);
 		} else if (k < 50) {
 			do_write(fi, m->size, len, OP_APPEND);
 		} else if (k < 80) {
-			do_read(fi, rnd(m->size + 1), len);
+			do_read(fi, rnd(m->size + 4096), len);
 		} else if (k < 90) {
-			do_truncate(fi, rnd(m->size + 1));
+			size_t sz = rnd(m->size + 32768);
+
+			do_truncate(fi, sz < MAX_SIZE ? sz : MAX_SIZE);
 		} else if (k < 95) {
 			do_rename(fi);
 		} else {
 			do_recreate(fi);
+		}
+		if (check_each) {
+			size_t off;
+
+			for (off = 0; off < m->size; off += MAX_IO)
+				do_read(fi, off, MAX_IO);
 		}
 	}
 	verify_all();
@@ -368,6 +392,8 @@ int main(int argc, char **argv)
 	size_t i;
 
 	seed = s_seed ? (uint32_t)strtoul(s_seed, NULL, 0) : 20261002u;
+	trace = getenv("LWEXT4_FSX_TRACE") != NULL;
+	check_each = getenv("LWEXT4_FSX_CHECK_EACH") != NULL;
 	for (i = 0; i < NFILES; i++) {
 		files[i].data = malloc(MAX_SIZE);
 		TEST_ASSERT(files[i].data != NULL);
