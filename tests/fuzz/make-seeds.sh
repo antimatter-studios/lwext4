@@ -52,10 +52,12 @@ image()
 	rm -f "$work/$name"
 	mke2fs -q -F -U "$uuid" -E "hash_seed=$hseed" -N 96 -d "$d" "$@" \
 		"$work/$name" "$size" 2>/dev/null
-	# mke2fs -d copies the host's ctime, which touch cannot set
+	# mke2fs -d copies the host's ctime (which touch cannot set) and
+	# owner: make them fixed
 	(cd "$d" && find . | sed 's|^\.|/|; s|^//|/|') |
-		sed 's/.*/sif "&" ctime 1700000000/' >"$work/ctime"
-	debugfs -w -f "$work/ctime" "$work/$name" >/dev/null 2>&1
+		sed 's/.*/sif "&" ctime 1700000000\nsif "&" uid 0\nsif "&" gid 0/' \
+		>"$work/fixed"
+	debugfs -w -f "$work/fixed" "$work/$name" >/dev/null 2>&1
 	# mke2fs -d writes linear directories: index the ones of more than a
 	# block (dir/sub) as htrees where the layout has dir_index.
 	e2fsck -fyD "$work/$name" >/dev/null 2>&1 || [ $? -le 1 ]
@@ -76,6 +78,28 @@ image ext4-1k.img 256K -t ext4 -b 1024 -I 256 -O ^has_journal,^metadata_csum,^me
 image ext4-csum-1k.img 256K -t ext4 -b 1024 -I 256 -O ^has_journal,metadata_csum,^metadata_csum_seed,^orphan_file
 image ext4-journal-1k.img 2304K -t ext4 -b 1024 -I 256 -O metadata_csum,^metadata_csum_seed,^orphan_file
 image ext4-2k.img 256K -t ext4 -b 2048 -I 128 -O ^has_journal,^metadata_csum_seed,^orphan_file
+# The default of e2fsprogs 1.47: checksums from the seed in the superblock
+image ext4-csum-seed-1k.img 256K -t ext4 -b 1024 -I 256 -O ^has_journal,metadata_csum,metadata_csum_seed,^orphan_file
+
+# Orphan list as Linux leaves it after a crash (released at a read-write
+# mount): a deleted file, then a file whose truncate was interrupted.
+cp "$out/ext4-1k.img" "$work/orphans.img"
+ino()
+{
+	debugfs -R "stat $1" "$work/orphans.img" 2>/dev/null |
+		sed -n 's/^Inode: \([0-9]*\).*/\1/p'
+}
+a=$(ino /a.txt)
+b=$(ino /dir/b.bin)
+debugfs -w -f - "$work/orphans.img" >/dev/null 2>&1 <<CMDS
+unlink /a.txt
+sif <$a> links_count 0
+sif <$a> dtime $b
+sif <$b> size 100
+sif <$b> dtime 0
+ssv last_orphan $a
+CMDS
+cp "$work/orphans.img" "$out/ext4-orphans-1k.img"
 
 # Operation scripts for fuzz_rw: every operation once, and pseudo-random
 # ones. Written as bytes by awk, then appended with the 2-byte length.
