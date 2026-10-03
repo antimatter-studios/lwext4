@@ -276,6 +276,42 @@ void ext4_inode_set_generation(struct ext4_inode *inode, uint32_t gen)
 	inode->generation = to_le32(gen);
 }
 
+void ext4_inode_stamp(struct ext4_sblock *sb, struct ext4_inode *inode,
+		      uint32_t which, uint32_t time)
+{
+	/* Seconds are stored as a signed 32-bit value: times from 2038 on
+	 * set epoch bit 0 of the extended field (Linux:
+	 * ((time - (int32_t)time) >> 32) & 3, nanoseconds above). */
+	uint32_t extra = to_le32(time >> 31);
+	uint32_t room = 0;
+
+	if (ext4_get16(sb, inode_size) > EXT4_GOOD_OLD_INODE_SIZE)
+		room = EXT4_GOOD_OLD_INODE_SIZE + to_le16(inode->extra_isize);
+
+#define EXT4_HAS_FIELD(f)                                                    \
+	(room >= offsetof(struct ext4_inode, f) + sizeof(inode->f))
+	if (which & EXT4_INODE_ATIME) {
+		inode->access_time = to_le32(time);
+		if (EXT4_HAS_FIELD(atime_extra))
+			inode->atime_extra = extra;
+	}
+	if (which & EXT4_INODE_MTIME) {
+		inode->modification_time = to_le32(time);
+		if (EXT4_HAS_FIELD(mtime_extra))
+			inode->mtime_extra = extra;
+	}
+	if (which & EXT4_INODE_CTIME) {
+		inode->change_inode_time = to_le32(time);
+		if (EXT4_HAS_FIELD(ctime_extra))
+			inode->ctime_extra = extra;
+	}
+	if ((which & EXT4_INODE_CRTIME) && EXT4_HAS_FIELD(crtime_extra)) {
+		inode->crtime = to_le32(time);
+		inode->crtime_extra = extra;
+	}
+#undef EXT4_HAS_FIELD
+}
+
 uint16_t ext4_inode_get_extra_isize(struct ext4_sblock *sb,
 				    struct ext4_inode *inode)
 {
