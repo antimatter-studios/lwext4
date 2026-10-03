@@ -1379,9 +1379,17 @@ static int jbd_journal_flush_trans(struct jbd_trans *trans)
 		if (!(buf && ext4_bcache_test_flag(buf, BC_UPTODATE) &&
 		      jbd_buf->block_rec->trans == trans)) {
 			struct ext4_block jbd_block = EXT4_BLOCK_ZERO();
+			bool dont_shake = fs->bdev->bc->dont_shake;
+
+			/* Getting the block must not make room in the cache
+			 * by writing other dirty buffers: their end_write
+			 * callbacks can free jbd_bufs of this transaction,
+			 * tmp among them. */
+			fs->bdev->bc->dont_shake = true;
 			r = jbd_block_get(journal->jbd_fs,
 						&jbd_block,
 						jbd_buf->jbd_lba);
+			fs->bdev->bc->dont_shake = dont_shake;
 			if (r == EOK) {
 				memcpy(tmp_data, jbd_block.data,
 						journal->block_size);
@@ -1492,8 +1500,11 @@ static void jbd_journal_discard_trans(struct jbd_journal *journal,
 		buf = ext4_bcache_find_get(fs->bdev->bc, &block,
 					   jbd_buf->block_rec->lba);
 		if (buf) {
-			if (buf->end_write == jbd_trans_end_write &&
-			    buf->end_write_arg == jbd_buf) {
+			/* Whichever jbd_buf the callback belongs to (another
+			 * transaction's, or another of this block's): all of
+			 * them are being discarded. Releasing the buffer may
+			 * write it, and the callback would free them. */
+			if (buf->end_write == jbd_trans_end_write) {
 				buf->end_write = NULL;
 				buf->end_write_arg = NULL;
 			}
