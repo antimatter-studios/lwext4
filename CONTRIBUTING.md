@@ -32,6 +32,10 @@ Pull requests
   builds the new tests against the base of the branch and fails if one of
   them passes there, i.e. if it does not test the fix. A test that must pass
   on the base as well (a guard) says so in a `red-green: guard` comment.
+- A fix for a fuzzer finding also adds the minimised input to
+  [tests/fuzz/crashes/](tests/fuzz/crashes), which the CI job
+  `fuzz-replay` runs through every target (see
+  [tests/fuzz/README.md](tests/fuzz/README.md)).
 - Tests create their disk images in `tmp/` of the worktree (gitignored),
   never in `/tmp`, and the script that runs them deletes them when it
   exits (`tests/run_test.sh` for each CTest test, the README acceptance
