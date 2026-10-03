@@ -31,10 +31,21 @@ def previous_tag(tag):
     return tags[0] if tags else None
 
 
+def shipped(sha, prev):
+    """True if <sha> is a merge whose merged head <prev> already contains."""
+    if not prev:
+        return False
+    head = subprocess.run(("git", "rev-parse", "-q", "--verify", sha + "^2"),
+                          capture_output=True, text=True).stdout.strip()
+    return bool(head) and subprocess.run(
+        ("git", "merge-base", "--is-ancestor", head, prev)).returncode == 0
+
+
 def manifest(tag):
     # Releases before main were tagged on the rebuilt integration branch,
     # which main does not contain: start at the merge base with the
-    # previous tag rather than at the tag itself.
+    # previous tag rather than at the tag itself, and leave out the merges
+    # of branches that the previous release already shipped.
     prev = previous_tag(tag)
     base = git("merge-base", prev, tag) if prev else None
     rng = "%s..%s" % (base, tag) if base else tag
@@ -45,6 +56,8 @@ def manifest(tag):
         if not rec:
             continue
         sha, subject, body = (rec.split("\t", 2) + ["", ""])[:3]
+        if shipped(sha, prev):
+            continue
         m = re.match(r"Merge pull request #(\d+) from [^/]+/(\S+)", subject)
         b = re.match(r"Merge branch '([^']+)'", subject)
         if m:
