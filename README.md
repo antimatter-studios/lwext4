@@ -28,10 +28,9 @@
 >   `ci/run.sh --list`, `ci/run.sh native asan-ubsan`,
 >   `ci/run.sh qemu-user s390x`, `ci/run.sh avr`.
 
-[![Join the chat at https://gitter.im/gkostka/lwext4](https://badges.gitter.im/gkostka/lwext4.svg)](https://gitter.im/gkostka/lwext4?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
-[![License (GPL v2.0)](https://img.shields.io/badge/license-GPL%20(v2.0)-blue.svg?style=flat-square)](http://opensource.org/licenses/GPL-2.0)
-[![Build Status](https://travis-ci.org/gkostka/lwext4.svg)](https://travis-ci.org/gkostka/lwext4)
-[![](http://img.shields.io/gratipay/user/gkostka.svg)](https://gratipay.com/gkostka/)
+[![CI](https://github.com/antimatter-studios/lwext4/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/antimatter-studios/lwext4/actions/workflows/ci.yml?query=branch%3Amain)
+[![Release](https://img.shields.io/github/v/release/antimatter-studios/lwext4?include_prereleases)](https://github.com/antimatter-studios/lwext4/releases)
+[![License: BSD-3-Clause, GPL-2.0 (ext4_extent.c, ext4_xattr.c)](https://img.shields.io/badge/license-BSD--3--Clause%20%2F%20GPL--2.0-blue.svg)](#credits)
 
 ![lwext4](https://cloud.githubusercontent.com/assets/8606098/11697327/68306d88-9eb9-11e5-8807-81a2887f077e.png)
 
