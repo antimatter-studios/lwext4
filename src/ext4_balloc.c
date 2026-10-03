@@ -349,6 +349,52 @@ int ext4_balloc_free_blocks(struct ext4_inode_ref *inode_ref,
 	return rc;
 }
 
+/**@brief Whether a block holds metadata of its block group: the boot
+ *        block and superblock (up to first_data_block), the superblock
+ *        backup and the (reserved) group descriptor blocks at the start
+ *        of the group, its bitmaps and its inode table. A damaged bitmap
+ *        may mark them free; they must never be allocated. (Bitmaps and
+ *        inode tables of other groups placed here by flex_bg are not
+ *        checked: that would need their descriptors.)
+ * @param sb    superblock
+ * @param bg    descriptor of the block's group
+ * @param bgid  index of the block's group
+ * @param baddr block address
+ * @return true if the block is metadata*/
+static bool ext4_balloc_is_meta(struct ext4_sblock *sb, struct ext4_bgroup *bg,
+				uint32_t bgid, ext4_fsblk_t baddr)
+{
+	uint32_t block_size = ext4_sb_get_block_size(sb);
+	uint32_t dsc_per_block = block_size / ext4_sb_get_desc_size(sb);
+	uint64_t first = ext4_balloc_get_block_of_bgid(sb, bgid);
+	uint64_t table = ext4_bg_get_inode_table_first_block(bg, sb);
+	uint64_t table_bytes = (uint64_t)ext4_get32(sb, inodes_per_group) *
+			       ext4_get16(sb, inode_size);
+	uint32_t meta = ext4_sb_is_super_in_bg(sb, bgid);
+
+	if (baddr <= ext4_get32(sb, first_data_block))
+		return true;
+
+	/* As ext4_fs_init_block_bitmap() counts them */
+	if (!ext4_sb_feature_incom(sb, EXT4_FINCOM_META_BG) ||
+	    bgid < ext4_sb_first_meta_bg(sb) * dsc_per_block) {
+		if (meta)
+			meta += ext4_bg_num_gdb(sb, bgid) +
+				ext4_get16(sb, s_reserved_gdt_blocks);
+	} else {
+		meta += ext4_bg_num_gdb(sb, bgid);
+	}
+	if (baddr >= first && baddr - first < meta)
+		return true;
+
+	if (baddr == ext4_bg_get_block_bitmap(bg, sb) ||
+	    baddr == ext4_bg_get_inode_bitmap(bg, sb))
+		return true;
+
+	return baddr >= table &&
+	       baddr - table < (table_bytes + block_size - 1) / block_size;
+}
+
 int ext4_balloc_alloc_block(struct ext4_inode_ref *inode_ref,
 			    ext4_fsblk_t goal,
 			    ext4_fsblk_t *fblock)
@@ -360,6 +406,7 @@ int ext4_balloc_alloc_block(struct ext4_inode_ref *inode_ref,
 	int r;
 	struct ext4_sblock *sb = &inode_ref->fs->sb;
 
+again:;
 	/* Load block group number for goal and relative index */
 	uint32_t bg_id = ext4_balloc_get_bgid_of_block(sb, goal);
 	uint32_t idx_in_bg = ext4_fs_addr_to_idx_bg(sb, goal);
@@ -556,6 +603,21 @@ success:
     /* Empty command - because of syntax */
     ;
 
+	/* A damaged bitmap marked metadata free: its bit is set again now,
+	 * which repairs the bitmap (the free counts never included it);
+	 * look for another block. Each round sets one more bit, so this
+	 * ends. */
+	if (ext4_balloc_is_meta(sb, bg_ref.block_group, bg_ref.index, alloc)) {
+		ext4_dbg(DEBUG_BALLOC, DBG_WARN "Block %" PRIu64
+			 " is metadata but free in the bitmap of group %"
+			 PRIu32 "\n", alloc, bg_ref.index);
+		bg_ref.dirty = true;
+		r = ext4_fs_put_block_group_ref(&bg_ref);
+		if (r != EOK)
+			return r;
+		goto again;
+	}
+
 	uint32_t block_size = ext4_sb_get_block_size(sb);
 
 	/* Update superblock free blocks count */
@@ -618,8 +680,11 @@ int ext4_balloc_try_alloc_block(struct ext4_inode_ref *inode_ref,
 			bg_ref.index);
 	}
 
-	/* Check if block is free */
-	*free = ext4_bmap_is_bit_clr(b.data, index_in_group);
+	/* Check if block is free; metadata never is, whatever a damaged
+	 * bitmap says */
+	*free = ext4_bmap_is_bit_clr(b.data, index_in_group) &&
+		!ext4_balloc_is_meta(sb, bg_ref.block_group, block_group,
+				     baddr);
 
 	/* Allocate block if possible */
 	if (*free) {
