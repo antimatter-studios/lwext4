@@ -3065,6 +3065,11 @@ int ext4_listxattr(const char *path, char *list, size_t size, size_t *ret_size)
 			const char *prefix =
 				ext4_get_xattr_name_prefix(entry->name_index,
 							   &prefix_len);
+			/* An unknown name index (damaged, or from a newer
+			 * kernel) has no namespace: no xattr call could use
+			 * the name, so it is not listed, as in Linux. */
+			if (!prefix)
+				continue;
 			if (size) {
 				if (prefix_len + entry->name_len + 1 > size) {
 					ext4_fs_put_inode_ref(&inode_ref);
