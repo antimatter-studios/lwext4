@@ -52,6 +52,7 @@
 #include <ext4_dir_idx.h>
 #include <ext4_xattr.h>
 #include <ext4_journal.h>
+#include <ext4_extent.h>
 
 
 #include <stdlib.h>
@@ -361,6 +362,8 @@ static int ext4_unlink(struct ext4_mountpoint *mp,
 
 /****************************************************************************/
 
+static int ext4_orphan_cleanup(struct ext4_mountpoint *mp);
+
 int ext4_mount(const char *dev_name, const char *mount_point,
 	       bool read_only)
 {
@@ -443,6 +446,11 @@ int ext4_mount(const char *dev_name, const char *mount_point,
 
 	bd->fs = &mp->fs;
 	mp->mounted = 1;
+
+	/* Orphans of a filesystem whose journal needs replaying are released
+	 * by ext4_recover(), after the replay. */
+	if (!ext4_sb_feature_incom(&mp->fs.sb, EXT4_FINCOM_RECOVER))
+		ext4_orphan_cleanup(mp);
 	return r;
 }
 
@@ -621,6 +629,8 @@ static int __ext4_recover(const char *mount_point)
 		ext4_sb_set_free_blocks_cnt(&mp->fs.sb, free_blocks_count);
 		ext4_set32(&mp->fs.sb, free_inodes_count, free_inodes_count);
 		/* We don't need to save the superblock stats immediately. */
+
+		r = ext4_orphan_cleanup(mp);
 	}
 
 Finish:
@@ -949,6 +959,101 @@ Finish:
 		ext4_trans_start(mp);
 
 	return r;
+}
+
+/*
+ * Release the orphan inodes (fork issue #128): inodes Linux put on the
+ * orphan list (s_last_orphan, chained through i_dtime) and had not
+ * finished with when it stopped. An inode without links was deleted while
+ * still open: free its blocks and the inode. An inode with links was being
+ * truncated: release the extents past i_size (blocks of block mapped files
+ * past i_size stay for e2fsck). Linux does this when it mounts a
+ * filesystem read-write, after replaying the journal.
+ *
+ * A damaged list (inode number out of range, a free inode, a loop) ends
+ * the walk and is cleared, as in Linux. An I/O error keeps the rest of the
+ * list for the next mount.
+ */
+static int ext4_orphan_cleanup(struct ext4_mountpoint *mp)
+{
+	struct ext4_fs *fs = &mp->fs;
+	struct ext4_sblock *sb = &fs->sb;
+	uint32_t ino = ext4_get32(sb, last_orphan);
+	uint32_t inodes = ext4_get32(sb, inodes_count);
+	uint32_t first = ext4_get32(sb, first_inode);
+	uint32_t n = 0;
+	int r = EOK;
+
+	if (!ino || fs->read_only)
+		return EOK;
+
+	while (ino && n++ < inodes) {
+		struct ext4_inode_ref ref;
+		uint32_t next, links;
+		uint64_t size;
+
+		if (ino < first || ino > inodes)
+			break;
+
+		r = ext4_fs_get_inode_ref(fs, ino, &ref);
+		if (r != EOK)
+			return r;
+		next = ext4_inode_get_del_time(ref.inode);
+		links = ext4_inode_get_links_cnt(ref.inode);
+		size = ext4_inode_get_size(sb, ref.inode);
+		/* On the list, i_dtime is the next orphan or 0. Anything else
+		 * (a deletion time, or -1 of an inode freed here already when
+		 * the list loops) means the list is damaged. */
+		if (!ext4_inode_get_mode(sb, ref.inode) || next > inodes) {
+			ext4_fs_put_inode_ref(&ref);
+			break;
+		}
+		r = ext4_fs_put_inode_ref(&ref);
+		if (r != EOK)
+			return r;
+
+		if (!links) {
+			r = ext4_trunc_inode(mp, ino, 0);
+			if (r != EOK)
+				return r;
+		}
+
+		r = ext4_fs_get_inode_ref(fs, ino, &ref);
+		if (r != EOK)
+			return r;
+		if (!links) {
+			ext4_inode_set_del_time(ref.inode, -1L);
+			r = ext4_fs_free_inode(&ref);
+		} else {
+#if CONFIG_EXTENT_ENABLE && CONFIG_EXTENTS_ENABLE
+			uint32_t bsize = ext4_sb_get_block_size(sb);
+
+			if (ext4_sb_feature_incom(sb, EXT4_FINCOM_EXTENTS) &&
+			    ext4_inode_has_flag(ref.inode,
+						EXT4_INODE_FLAG_EXTENTS))
+				r = ext4_extent_remove_space(
+				    &ref, (ext4_lblk_t)((size + bsize - 1) /
+							bsize),
+				    EXT_MAX_BLOCKS);
+#endif
+			ext4_inode_set_del_time(ref.inode, 0);
+			ref.dirty = true;
+		}
+		if (r != EOK) {
+			ext4_fs_put_inode_ref(&ref);
+			return r;
+		}
+		r = ext4_fs_put_inode_ref(&ref);
+		if (r != EOK)
+			return r;
+
+		/* Done with this one: the list starts at the next */
+		ext4_set32(sb, last_orphan, next);
+		ino = next;
+	}
+
+	ext4_set32(sb, last_orphan, 0);
+	return ext4_sb_write(fs->bdev, sb);
 }
 
 static int ext4_trunc_dir(struct ext4_mountpoint *mp,
