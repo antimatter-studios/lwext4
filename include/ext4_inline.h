@@ -49,7 +49,7 @@ struct ext4_inline_dirent {
 	uint8_t type;      /**< EXT4_DE_* (EXT4_DE_DIR for "." and "..") */
 	uint8_t name_len;
 	const char *name;  /**< in the i-node, valid while it is loaded */
-	const struct ext4_dir_en *en; /**< NULL for "." and ".." */
+	struct ext4_dir_en *en; /**< NULL for "." and ".." */
 };
 
 /**@brief Entry of an inline directory at a position, and the position
