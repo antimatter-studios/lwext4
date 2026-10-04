@@ -259,7 +259,7 @@ some a `.check.sh` that checks the result with `e2fsck`. Run them with
 
 def fuzzing(site):
     rows = []
-    for path in sorted(glob.glob("tests/fuzz/crashes/*")):
+    for path in sorted(glob.glob("tests/fuzz/crashes/*.gz")):
         name = os.path.basename(path)
         m = re.match(r"^(\d+)-(.*?)(\.gz)?$", name)
         if m:
