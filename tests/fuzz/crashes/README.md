@@ -20,4 +20,6 @@ on every pull request, so the bug stays fixed. They are gzipped (`gzip -9
 | `152-truncate-huge-size.gz` | fuzz_rw | #152: truncating an orphan with a damaged size of 2^62 never ended (a timeout) |
 | `155-dx-csum-count.gz` | fuzz_mount | #155: the htree checksum read past the block for an index node whose count exceeds its limit |
 | `157-journal-block-size.gz` | fuzz_rw | #157: a journal block size of 64 KiB on a 1 KiB filesystem overflowed block buffers |
+| `160-bg-gdt-overlap.gz` | fuzz_mount | #160: a block bitmap on the group descriptors wiped them (assert on block 0; a read-only mount wrote them back) |
+| `162-truncate-inline-huge.gz` | fuzz_rw | #162: truncating an inline file with a damaged size of about 2^64 never ended (a timeout) |
 | `mount-before-2026-10-04-ce41bd70.gz` | fuzz_mount | found on 2026-10-01 by the harness before it was in the repository; fixed on main by 2026-10-04 (not bisected) |
