@@ -92,6 +92,7 @@ run)
 		echo "== $t: ${secs}s"
 		"$b/$t" -max_total_time="$secs" -timeout=10 -rss_limit_mb=2048 \
 			-max_len=2400000 -artifact_prefix="$b/art/$t-" \
+			-dict=tests/fuzz/ext4.dict \
 			-print_final_stats=1 "$b/corpus/$t" "$b/seeds" \
 			"$b/crashes" 2>&1 | tail -n 40 || true
 	done
