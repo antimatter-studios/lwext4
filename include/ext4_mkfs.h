@@ -50,6 +50,10 @@ extern "C" {
 #include <stdbool.h>
 #include <stdint.h>
 
+/**@brief The smallest journal ext4_mkfs makes, in blocks (the jbd2
+ *        minimum, JBD2_MIN_JOURNAL_BLOCKS).*/
+#define EXT4_MKFS_MIN_JOURNAL_BLOCKS 1024
+
 struct ext4_mkfs_info {
 	uint64_t len;
 	uint32_t block_size;
@@ -57,6 +61,8 @@ struct ext4_mkfs_info {
 	uint32_t inodes_per_group;
 	uint32_t inode_size;
 	uint32_t inodes;
+	/* Size of the journal (with journal set): 0 chooses one from len,
+	 * otherwise at least EXT4_MKFS_MIN_JOURNAL_BLOCKS (EINVAL) */
 	uint32_t journal_blocks;
 	uint32_t feat_ro_compat;
 	uint32_t feat_compat;
