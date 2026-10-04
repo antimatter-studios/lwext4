@@ -53,6 +53,7 @@
 #include <ext4_xattr.h>
 #include <ext4_journal.h>
 #include <ext4_extent.h>
+#include <ext4_inline.h>
 
 
 #include <stdlib.h>
@@ -297,6 +298,16 @@ static int ext4_has_children(bool *has_children, struct ext4_inode_ref *enode)
 		return EOK;
 	}
 
+	if (ext4_inline_has_data(sb, enode->inode)) {
+		struct ext4_inline_dirent de;
+		uint64_t pos = 2; /* after "." and ".." */
+		int r = ext4_inline_dir_next(sb, enode->index, enode->inode,
+					     &pos, &de);
+
+		*has_children = r == EOK;
+		return r == ENOENT ? EOK : r;
+	}
+
 	struct ext4_dir_iter it;
 	int rc = ext4_dir_iterator_init(&it, enode, 0);
 	if (rc != EOK)
@@ -393,6 +404,13 @@ static int ext4_link(struct ext4_mountpoint *mp, struct ext4_inode_ref *parent,
 	 */
 	if (is_dir) {
 		bool idx;
+#if CONFIG_XATTR_ENABLE
+		/* An inline directory keeps its parent in i_block: move it to
+		 * a block, where ".." is an entry */
+		r = ext4_inline_convert(ch);
+		if (r != EOK)
+			return r;
+#endif
 		idx = ext4_inode_has_flag(ch->inode, EXT4_INODE_FLAG_INDEX);
 		struct ext4_dir_search_result res;
 		if (!idx) {
@@ -1997,6 +2015,12 @@ static int ext4_ftruncate_no_lock(ext4_file *file, uint64_t size)
 		goto Finish;
 	}
 	if (file->fsize < size) {
+#if CONFIG_XATTR_ENABLE
+		/* Inline data moves to a block before the file grows */
+		r = ext4_inline_convert(&ref);
+		if (r != EOK)
+			goto Finish;
+#endif
 		r = ext4_grow_no_lock(file, &ref, size);
 		goto Finish;
 	}
@@ -2011,8 +2035,10 @@ static int ext4_ftruncate_no_lock(ext4_file *file, uint64_t size)
 		file->fsize = size;
 		if (file->fpos > size)
 			file->fpos = size;
-		/* What was after the new end must not come back */
-		r = ext4_zero_tail(&ref, size);
+		/* What was after the new end must not come back (inline
+		 * data was cut by the truncation itself) */
+		if (!ext4_inline_has_data(&file->mp->fs.sb, ref.inode))
+			r = ext4_zero_tail(&ref, size);
 	}
 
 	/*Stop write back cache mode, also when the truncation failed*/
@@ -2092,6 +2118,16 @@ static int ext4_fread_no_lock(ext4_file *file, void *buf, size_t size,
 	iblock_idx = (uint32_t)((file->fpos) / block_size);
 	iblock_last = (uint32_t)((file->fpos + size) / block_size);
 	unalg = (file->fpos) % block_size;
+
+	/* Inline data: the file is in the i-node */
+	if (ext4_inline_has_data(sb, ref.inode)) {
+		size_t n = 0;
+
+		r = ext4_inline_read(sb, ref.inode, file->fpos, buf, size, &n);
+		if (rcnt)
+			*rcnt = n;
+		goto Finish;
+	}
 
 	/*Fast symlink: the target is stored in i_block*/
 	if (ext4_inode_is_fast_symlink(sb, ref.inode)) {
@@ -2314,6 +2350,17 @@ int ext4_fwrite(ext4_file *file, const void *buf, size_t size, size_t *wcnt)
 		EXT4_MP_UNLOCK(file->mp);
 		return r;
 	}
+
+#if CONFIG_XATTR_ENABLE
+	/* Inline data moves to a block before it is written */
+	r = ext4_inline_convert(&ref);
+	if (r != EOK) {
+		ext4_fs_put_inode_ref(&ref);
+		ext4_trans_abort(file->mp);
+		EXT4_MP_UNLOCK(file->mp);
+		return r;
+	}
+#endif
 
 	/*Sync file size*/
 	file->fsize = ext4_inode_get_size(sb, ref.inode);
@@ -3497,6 +3544,15 @@ int ext4_dir_rm(const char *path)
 				break;
 			}
 
+#if CONFIG_XATTR_ENABLE
+			/* Its entries are removed one by one: from a block */
+			r = ext4_inline_convert(&act);
+			if (r != EOK) {
+				ext4_fs_put_inode_ref(&act);
+				break;
+			}
+#endif
+
 			/*Initialize iterator.*/
 			r = ext4_dir_iterator_init(&it, &act, act_curr_pos);
 			if (r != EOK) {
@@ -3783,6 +3839,33 @@ int ext4_dir_entry_get(ext4_dir *dir, const ext4_direntry **entry)
 	r = ext4_fs_get_inode_ref(&dir->f.mp->fs, dir->f.inode, &dir_inode);
 	if (r != EOK)
 		goto Finish;
+
+	if (ext4_inline_has_data(&dir->f.mp->fs.sb, dir_inode.inode)) {
+		struct ext4_inline_dirent ide;
+		uint64_t pos = dir->next_off;
+
+		r = ext4_inline_dir_next(&dir->f.mp->fs.sb, dir->f.inode,
+					 dir_inode.inode, &pos, &ide);
+		if (r == EOK) {
+			memset(&dir->de.name, 0, sizeof(dir->de.name));
+			memcpy(&dir->de.name, ide.name, ide.name_len);
+			dir->de.inode = ide.inode;
+			dir->de.entry_length =
+			    ide.en ? ext4_dir_en_get_entry_len(ide.en) : 0;
+			dir->de.name_length = ide.name_len;
+			dir->de.inode_type = ide.type;
+			dir->next_off = pos;
+			*entry = &dir->de;
+		} else if (r == ENOENT) {
+			dir->next_off = EXT4_DIR_ENTRY_OFFSET_TERM;
+			r = EOK;
+		}
+		if (r == EOK)
+			r = ext4_fs_put_inode_ref(&dir_inode);
+		else
+			ext4_fs_put_inode_ref(&dir_inode);
+		goto Finish;
+	}
 
 	/* On an error next_off stays, so the same read is tried again by the
 	 * next call. */
