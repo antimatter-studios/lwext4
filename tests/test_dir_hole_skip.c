@@ -10,8 +10,8 @@
  *
  * /huge and /normal (see the .sh; with extents and with block maps) have
  * the same entries; /huge claims
- * 4 GiB - 1 KiB. Listing /huge, and looking a name up in it, must take
- * about as long as in /normal (compared, not timed: CI machines differ),
+ * 4 GiB - 1 KiB. Listing /huge, looking a name up and adding names to it
+ * must take about as long as in /normal (compared, not timed: CI machines differ),
  * and the listing return the same entries.
  */
 
@@ -57,9 +57,26 @@ static double lookup(const char *path)
 	return now() - t;
 }
 
+/* Seconds to add 20 names (adding searches the blocks for room) */
+static double add(const char *dir)
+{
+	char path[64];
+	double t = now();
+	int i;
+
+	for (i = 0; i < 20; i++) {
+		ext4_file f;
+
+		snprintf(path, sizeof(path), "%s/n%d", dir, i);
+		TEST_ASSERT_EQ(EOK, ext4_fopen(&f, path, "wb"));
+		TEST_ASSERT_EQ(EOK, ext4_fclose(&f));
+	}
+	return now() - t;
+}
+
 static void run(const char *image)
 {
-	double normal, huge, find_normal, find_huge;
+	double normal, huge, find_normal, find_huge, add_normal, add_huge;
 	int n_normal, n_huge;
 
 	TEST_ASSERT_EQ(EOK, test_mount(image, true));
@@ -67,6 +84,11 @@ static void run(const char *image)
 	huge = list(TEST_MP "huge", &n_huge);
 	find_normal = lookup(TEST_MP "normal/missing");
 	find_huge = lookup(TEST_MP "huge/missing");
+	test_umount();
+
+	TEST_ASSERT_EQ(EOK, test_mount(image, false));
+	add_normal = add(TEST_MP "normal");
+	add_huge = add(TEST_MP "huge");
 	test_umount();
 
 	printf("list: normal %.6f s, huge %.6f s; lookup: normal %.6f s, "
@@ -78,6 +100,8 @@ static void run(const char *image)
 	 * noise on a slow machine. */
 	TEST_ASSERT(huge < normal * 50 + 0.05);
 	TEST_ASSERT(find_huge < find_normal * 50 + 0.05);
+	printf("add: normal %.6f s, huge %.6f s\n", add_normal, add_huge);
+	TEST_ASSERT(add_huge < add_normal * 50 + 0.05);
 }
 
 int main(int argc, char **argv)

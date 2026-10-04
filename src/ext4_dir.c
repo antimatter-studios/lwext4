@@ -462,9 +462,18 @@ int ext4_dir_add_entry(struct ext4_inode_ref *parent, const char *name,
 		if (r != EOK)
 			return r;
 
-		/* Hole in the directory */
-		if (fblock == 0)
+		/* Hole in the directory: continue after it */
+		if (fblock == 0) {
+			uint64_t next;
+
+			r = ext4_dir_skip_hole(parent, iblock, &next);
+			if (r != EOK)
+				return r;
+			if (next >= total_blocks)
+				break;
+			iblock = (uint32_t)next - 1;
 			continue;
+		}
 
 		struct ext4_block block;
 		r = ext4_trans_block_get(fs->bdev, &block, fblock);
