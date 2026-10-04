@@ -232,8 +232,9 @@ int ext4_fs_indirect_find_goal(struct ext4_inode_ref *inode_ref,
  * @param iblock            Logical index of block
  * @param fblock            Output pointer for return physical
  *                          block address
- * @param support_unwritten Indicate whether unwritten block range
- *                          is supported under the current context
+ * @param support_unwritten Whether the caller takes a hole (or an
+ *                          unwritten extent): *fblock 0. Otherwise a hole
+ *                          is damage and the result is EIO.
  * @return Error code
  */
 /**@brief End of the hole of a block mapped (not extent) i-node at iblock:

@@ -98,6 +98,21 @@ extern "C" {
 #define CONFIG_EXTENTS_ENABLE 1
 #endif
 
+/**@brief  Enable/disable the clock: lwext4 sets the access, modification,
+ *         change and creation times of what it writes, and the mount and
+ *         write times of the superblock (see ext4_clock_setup). Without
+ *         it every time stays as it is (0 for new i-nodes).*/
+#ifndef CONFIG_EXT4_CLOCK
+#define CONFIG_EXT4_CLOCK 1
+#endif
+
+/**@brief  Lowest time (Unix seconds) the clock gives, e.g. the build's
+ *         SOURCE_DATE_EPOCH, for boards without a clock that format new
+ *         filesystems. 0: no lower bound.*/
+#ifndef CONFIG_EXT4_CLOCK_MIN
+#define CONFIG_EXT4_CLOCK_MIN 0
+#endif
+
 /**@brief   Include error codes from ext4_errno or standard library.*/
 #ifndef CONFIG_HAVE_OWN_ERRNO
 #define CONFIG_HAVE_OWN_ERRNO 0

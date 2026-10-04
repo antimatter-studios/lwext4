@@ -48,6 +48,7 @@
 #include <ext4_inode.h>
 #include <ext4_ialloc.h>
 #include <ext4_mkfs.h>
+#include <ext4.h>
 
 #include <inttypes.h>
 #include <string.h>
@@ -306,7 +307,7 @@ static void fill_sb(struct fs_aux_info *aux_info, struct ext4_mkfs_info *info)
 	sb->desc_size = to_le16(info->dsc_size);
 	sb->default_mount_opts = to_le32(0);
 	sb->first_meta_bg = to_le32(0);
-	sb->mkfs_time = to_le32(0);
+	sb->mkfs_time = to_le32(ext4_clock_get());
 
 	sb->reserved_blocks_count_hi = to_le32(0);
 	sb->min_extra_isize = to_le32(sizeof(struct ext4_inode) -
@@ -570,6 +571,11 @@ static int alloc_inodes(struct ext4_fs *fs)
 		r = ext4_fs_alloc_inode(fs, &inode_ref, filetype);
 		if (r != EOK)
 			return r;
+		if (ext4_clock_get())
+			ext4_inode_stamp(&fs->sb, inode_ref.inode,
+					 EXT4_INODE_ATIME | EXT4_INODE_MTIME |
+					 EXT4_INODE_CTIME | EXT4_INODE_CRTIME,
+					 ext4_clock_get());
 
 		ext4_inode_set_mode(&fs->sb, inode_ref.inode, 0);
 

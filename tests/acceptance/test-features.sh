@@ -60,10 +60,10 @@ chmod /d/small 640
 chown /d/small 100000 70000
 atime /d/small 1111111111
 mtime /d/small 1234567890
-ctime /d/small 1300000000
 setxattr /d/small user.test hello
 setxattr /d/small user.other world
 removexattr /d/small user.other
+ctime /d/small 1300000000
 mkdir /many
 EOF
 	# Enough entries for several directory blocks even with 64 KiB blocks
@@ -244,6 +244,9 @@ rw_case ext4-no-journal 64M -t ext4 -O ^has_journal
 rw_case ext4-no-dir_index 64M -t ext4 -O ^dir_index
 # mmp is listed as unsupported; lwext4 ignores it and must not break it.
 rw_case ext4-mmp 64M -t ext4 -O mmp
+# Files lwext4 creates are not inline; inline ones of e2fsprogs/Linux move
+# to a block when they change (test_inline_data_write)
+rw_case ext4-inline_data 64M -t ext4 -O inline_data
 
 # ---------------------------------------------------------------------------
 # e2fsprogs writes, lwext4 reads (and then modifies).
@@ -537,8 +540,6 @@ EOF
 }
 
 step "unsupported features"
-unsupported_incompat inline_data -t ext4 -O inline_data
-unsupported_incompat large_dir -t ext4 -O large_dir
 unsupported_incompat ea_inode -t ext4 -O ea_inode
 unsupported_incompat journal_dev -O journal_dev
 unsupported_ro quota -t ext4 -O quota

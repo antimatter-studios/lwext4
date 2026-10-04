@@ -48,6 +48,7 @@
 #include <ext4_trans.h>
 #include <ext4_dir.h>
 #include <ext4_extent.h>
+#include <ext4_inline.h>
 #include <ext4_dir_idx.h>
 #include <ext4_crc32.h>
 #include <ext4_inode.h>
@@ -425,6 +426,13 @@ void ext4_dir_write_entry(struct ext4_sblock *sb, struct ext4_dir_en *en,
 int ext4_dir_add_entry(struct ext4_inode_ref *parent, const char *name,
 		       uint32_t name_len, struct ext4_inode_ref *child)
 {
+#if CONFIG_XATTR_ENABLE
+	/* An inline directory moves to a block first */
+	int rc = ext4_inline_convert(parent);
+	if (rc != EOK)
+		return rc;
+#endif
+
 	int r;
 	struct ext4_fs *fs = parent->fs;
 	struct ext4_sblock *sb = &parent->fs->sb;
@@ -549,6 +557,11 @@ int ext4_dir_find_entry(struct ext4_dir_search_result *result,
 	result->block.lb_id = 0;
 	result->dentry = NULL;
 
+	/* Inline directory: the entry is in the i-node, no block is held */
+	if (ext4_inline_has_data(sb, parent->inode))
+		return ext4_inline_dir_find(sb, parent->inode, name, name_len,
+					    &result->dentry);
+
 #if CONFIG_DIR_INDEX_ENABLE
 	/* "." and ".." are not in the hash tree: they are the first two
 	 * entries of block 0 (the index root), where the linear search below
@@ -644,6 +657,12 @@ int ext4_dir_find_entry(struct ext4_dir_search_result *result,
 int ext4_dir_remove_entry(struct ext4_inode_ref *parent, const char *name,
 			  uint32_t name_len)
 {
+#if CONFIG_XATTR_ENABLE
+	int rc0 = ext4_inline_convert(parent);
+	if (rc0 != EOK)
+		return rc0;
+#endif
+
 	struct ext4_sblock *sb = &parent->fs->sb;
 	/* Check if removing from directory */
 	if (!ext4_inode_is_type(sb, parent->inode, EXT4_INODE_MODE_DIRECTORY))
