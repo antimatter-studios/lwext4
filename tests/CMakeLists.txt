@@ -28,8 +28,10 @@ target_link_libraries(lwext4_test_util lwext4 blockdev Threads::Threads)
 add_subdirectory(acceptance)
 
 # The benchmark (tests/bench, fork issue #165) on the host: time is not
-# reproducible here, block I/O and heap are.
-if(NOT WIN32)
+# reproducible here, block I/O and heap are. It counts the heap by wrapping
+# malloc with the GNU linker's --wrap, which neither Windows nor Apple's
+# linker has.
+if(NOT WIN32 AND NOT APPLE)
     set(bench_dir ${CMAKE_CURRENT_SOURCE_DIR}/bench)
     add_executable(lwext4-bench ${bench_dir}/bench.c ${bench_dir}/bench_heap.c
                    ${bench_dir}/platform_host.c)
