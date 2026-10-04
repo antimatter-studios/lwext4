@@ -206,6 +206,15 @@ int ext4_sb_write(struct ext4_blockdev *bdev, struct ext4_sblock *s);
  * @return  Standard error code */
 int ext4_sb_read(struct ext4_blockdev *bdev, struct ext4_sblock *s);
 
+#if CONFIG_META_CSUM_ENABLE
+/**@brief   Initial value of the metadata checksums (metadata_csum):
+ *          checksum_seed of the superblock with the csum_seed feature,
+ *          crc32c of the filesystem UUID otherwise.
+ * @param   s superblock descriptor
+ * @return  checksum seed */
+uint32_t ext4_sb_csum_seed(struct ext4_sblock *s);
+#endif
+
 /**@brief   Superblock simple validation.
  * @param   s superblock descriptor
  * @return  true if OK*/

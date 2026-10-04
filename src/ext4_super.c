@@ -92,6 +92,16 @@ static uint32_t ext4_sb_csum(struct ext4_sblock *s)
 	return ext4_crc32c(EXT4_CRC32_INIT, s,
 			offsetof(struct ext4_sblock, checksum));
 }
+
+uint32_t ext4_sb_csum_seed(struct ext4_sblock *s)
+{
+	/* With csum_seed the seed is stored, so that the UUID can change
+	 * without rewriting every checksum. */
+	if (ext4_sb_feature_incom(s, EXT4_FINCOM_CSUM_SEED))
+		return ext4_get32(s, checksum_seed);
+
+	return ext4_crc32c(EXT4_CRC32_INIT, s->uuid, sizeof(s->uuid));
+}
 #else
 #define ext4_sb_csum(...) 0
 #endif
