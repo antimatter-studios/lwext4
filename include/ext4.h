@@ -167,6 +167,10 @@ int ext4_umount(const char *mount_point);
  *
  *              ext4_journal_stop("/");
  *              ext4_umount("/");
+ *
+ *          With a session open already (also one that ext4_journal_stop
+ *          kept because it could not write the journalled blocks), the
+ *          call continues it and returns EOK.
  * @param   mount_point Mount point.
  *
  * @return  Standard error code. */

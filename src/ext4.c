@@ -675,6 +675,14 @@ static int __ext4_journal_start(const char *mount_point)
 	if (mp->fs.read_only)
 		return EOK;
 
+	/* A session is open already (started before, or kept by an
+	 * ext4_journal_stop() that could not write the journalled blocks):
+	 * it continues. Starting again would reinitialise the jbd_fs and the
+	 * journal it uses, dropping the transactions waiting for their
+	 * checkpoint (fork issue #177). */
+	if (mp->fs.jbd_journal)
+		return EOK;
+
 	if (ext4_sb_feature_com(&mp->fs.sb,
 				EXT4_FCOM_HAS_JOURNAL)) {
 		r = jbd_get_fs(&mp->fs, &mp->jbd_fs);
