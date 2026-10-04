@@ -221,8 +221,8 @@ Supported ext2/3/4 features
 =====
 incompatible:
 ------------
-*  filetype, recover, meta_bg, extents, 64bit, flex_bg, largedir: **yes**
-*  compression, journal_dev, mmp, ea_inode, dirdata, bg_meta_csum, inline_data: **no**
+*  filetype, recover, meta_bg, extents, 64bit, flex_bg, metadata_csum_seed, largedir: **yes**
+*  compression, journal_dev, mmp, ea_inode, dirdata, inline_data: **no**
 
 A filesystem with an unsupported incompatible feature is not mounted
 (`ENOTSUP`). The exception is mmp, which is ignored: such a filesystem is
@@ -240,9 +240,10 @@ read-only:
 
 A filesystem with an unsupported read-only feature is mounted read-only.
 
-e2fsprogs 1.47 and later enable metadata_csum_seed and orphan_file by
-default, which lwext4 does not support. Create images for lwext4 without them:
-`mke2fs -t ext4 -O ^metadata_csum_seed,^orphan_file ...`
+Images made with the defaults of e2fsprogs 1.47 and later
+(metadata_csum_seed, orphan_file) are supported. lwext4 does not release
+orphan inodes (files deleted while still open when Linux stopped) when it
+mounts a filesystem; e2fsck does.
 
 Project tree
 =====

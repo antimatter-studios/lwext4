@@ -104,7 +104,7 @@ been corrected; **n/a** = cannot be verified in CI, reason given.
 | unsupported incompatible features | test-features.sh: inline_data, ea_inode, journal_dev refused with ENOTSUP, image untouched; mmp is ignored and e2fsck stays clean | doc (mmp behaviour documented) |
 | large_dir (three level htrees) supported | test_large_dir (CTest): lookups, inserts and removals in a 50000 entry directory of three levels, a full two level tree grown to three, ENOSPC without large_dir; e2fsck and debugfs | fixed (#131: large_dir was refused) |
 | unsupported read-only features | test-features.sh: quota, bigalloc mounted read-only, writes refused, image untouched (bigalloc: reading fails with an error, never wrong data) | doc |
-| e2fsprogs ≥ 1.47 defaults | test-features.sh: metadata_csum_seed refused, images made with the documented options work | doc (new note) |
+| e2fsprogs ≥ 1.47 defaults (metadata_csum_seed, orphan_file) supported | test-features.sh: image made with the defaults (metadata_csum_seed asked for explicitly), written by lwext4, e2fsck clean | fixed (#127: metadata_csum_seed was refused) |
 | GPLv2 files: ext4_xattr.c, ext4_extent.c; everything else BSD-3-Clause | test-build.sh compares the list with the license headers | doc (README said ext4_extents.c) |
 | "To use library as a BSD3, GPLv2 licensed source files must be removed first" | test-build.sh: library builds and links without the two files (extents and xattr disabled) | fixed, fix/xattr-disabled-build (CONFIG_XATTR_ENABLE=0 left undefined references) |
 | Project tree | test-docs.sh: every entry exists | doc (ext_images.7z removed) |
