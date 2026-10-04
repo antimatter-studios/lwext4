@@ -1872,7 +1872,9 @@ int ext4_fs_append_inode_dblk(struct ext4_inode_ref *inode_ref,
 			return rc;
 
 		*fblock = current_fsblk;
-		ext4_assert(*fblock);
+		/* Block 0 is the boot block or superblock */
+		if (!*fblock)
+			return EIO;
 
 		ext4_inode_set_size(inode_ref->inode, inode_size + block_size);
 		inode_ref->dirty = true;
