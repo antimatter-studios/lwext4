@@ -19,4 +19,5 @@ on every pull request, so the bug stays fixed. They are gzipped (`gzip -9
 | `150-dir-rm-cycle.gz` | fuzz_rw | #150: ext4_dir_rm descended a damaged tree with a cycle forever (a timeout) |
 | `152-truncate-huge-size.gz` | fuzz_rw | #152: truncating an orphan with a damaged size of 2^62 never ended (a timeout) |
 | `155-dx-csum-count.gz` | fuzz_mount | #155: the htree checksum read past the block for an index node whose count exceeds its limit |
+| `157-journal-block-size.gz` | fuzz_rw | #157: a journal block size of 64 KiB on a 1 KiB filesystem overflowed block buffers |
 | `mount-before-2026-10-04-ce41bd70.gz` | fuzz_mount | found on 2026-10-01 by the harness before it was in the repository; fixed on main by 2026-10-04 (not bisected) |
