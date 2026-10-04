@@ -28,10 +28,9 @@
 >   `ci/run.sh --list`, `ci/run.sh native asan-ubsan`,
 >   `ci/run.sh qemu-user s390x`, `ci/run.sh avr`.
 
-[![Join the chat at https://gitter.im/gkostka/lwext4](https://badges.gitter.im/gkostka/lwext4.svg)](https://gitter.im/gkostka/lwext4?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
-[![License (GPL v2.0)](https://img.shields.io/badge/license-GPL%20(v2.0)-blue.svg?style=flat-square)](http://opensource.org/licenses/GPL-2.0)
-[![Build Status](https://travis-ci.org/gkostka/lwext4.svg)](https://travis-ci.org/gkostka/lwext4)
-[![](http://img.shields.io/gratipay/user/gkostka.svg)](https://gratipay.com/gkostka/)
+[![CI](https://github.com/antimatter-studios/lwext4/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/antimatter-studios/lwext4/actions/workflows/ci.yml?query=branch%3Amain)
+[![Release](https://img.shields.io/github/v/release/antimatter-studios/lwext4?include_prereleases)](https://github.com/antimatter-studios/lwext4/releases)
+[![License: BSD-3-Clause, GPL-2.0 (ext4_extent.c, ext4_xattr.c)](https://img.shields.io/badge/license-BSD--3--Clause%20%2F%20GPL--2.0-blue.svg)](#credits)
 
 ![lwext4](https://cloud.githubusercontent.com/assets/8606098/11697327/68306d88-9eb9-11e5-8807-81a2887f077e.png)
 
@@ -221,8 +220,8 @@ Supported ext2/3/4 features
 =====
 incompatible:
 ------------
-*  filetype, recover, meta_bg, extents, 64bit, flex_bg, metadata_csum_seed, inline_data: **yes**
-*  compression, journal_dev, mmp, ea_inode, dirdata, largedir: **no**
+*  filetype, recover, meta_bg, extents, 64bit, flex_bg, metadata_csum_seed, largedir, inline_data: **yes**
+*  compression, journal_dev, mmp, ea_inode, dirdata: **no**
 
 A filesystem with an unsupported incompatible feature is not mounted
 (`ENOTSUP`). The exception is mmp, which is ignored: such a filesystem is
@@ -247,9 +246,10 @@ read-only:
 A filesystem with an unsupported read-only feature is mounted read-only.
 
 Images made with the defaults of e2fsprogs 1.47 and later
-(metadata_csum_seed, orphan_file) are supported. lwext4 does not release
-orphan inodes (files deleted while still open when Linux stopped) when it
-mounts a filesystem; e2fsck does.
+(metadata_csum_seed, orphan_file) are supported. Orphan inodes (files
+deleted while still open, or a truncate in progress, when Linux stopped)
+are released when a filesystem is mounted read-write, as Linux does; with
+orphan_file, a filesystem that has orphans pending is mounted read-only.
 
 Project tree
 =====
