@@ -2089,6 +2089,33 @@ __unused static void print_path(struct ext4_extent_path *path)
 	}
 }
 
+int ext4_extent_next_mapped(struct ext4_inode_ref *inode_ref,
+			    ext4_lblk_t iblock, ext4_lblk_t *next)
+{
+	struct ext4_extent_path *path = NULL;
+	struct ext4_extent *ex;
+	int err;
+
+	*next = EXT_MAX_BLOCKS;
+	err = ext4_find_extent(inode_ref, iblock, &path, 0);
+	if (err != EOK)
+		return err;
+
+	ex = path[path->depth].extent;
+	if (ex && to_le32(ex->first_block) > iblock)
+		/* iblock is before the first extent */
+		*next = to_le32(ex->first_block);
+	else if (ex && IN_RANGE(iblock, to_le32(ex->first_block),
+				ext4_ext_get_actual_len(ex)))
+		*next = iblock;
+	else
+		*next = ext4_ext_next_allocated_block(path);
+
+	ext4_ext_drop_refs(inode_ref, path, 0);
+	ext4_free(path);
+	return EOK;
+}
+
 int ext4_extent_get_blocks(struct ext4_inode_ref *inode_ref, ext4_lblk_t iblock,
 			   uint32_t max_blocks, ext4_fsblk_t *result,
 			   bool create, uint32_t *blocks_count)
