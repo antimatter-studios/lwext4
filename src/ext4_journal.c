@@ -43,6 +43,7 @@
 
 #include <ext4_fs.h>
 #include <ext4_super.h>
+#include <ext4_inode.h>
 #include <ext4_journal.h>
 #include <ext4_blockdev.h>
 #include <ext4_crc32.h>
@@ -492,6 +493,23 @@ int jbd_get_fs(struct ext4_fs *fs,
 	if (!jbd_verify_sb(&jbd_fs->sb)) {
 		rc = EIO;
 		goto Error;
+	}
+
+	/* Journal blocks are copied to and from filesystem blocks: the sizes
+	 * must match, and the log must lie inside the journal i-node (as
+	 * jbd2's load_superblock() requires) */
+	{
+		uint32_t bs = ext4_sb_get_block_size(&fs->sb);
+		uint64_t blocks = ext4_inode_get_size(&fs->sb, &jbd_fs->inode) /
+				  bs;
+		uint32_t maxlen = jbd_get32(&jbd_fs->sb, maxlen);
+		uint32_t first = jbd_get32(&jbd_fs->sb, first);
+
+		if (jbd_get32(&jbd_fs->sb, blocksize) != bs ||
+		    maxlen > blocks || first == 0 || first >= maxlen) {
+			rc = EIO;
+			goto Error;
+		}
 	}
 
 	if (rc == EOK)
