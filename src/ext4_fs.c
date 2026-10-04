@@ -216,6 +216,7 @@ int ext4_fs_check_features(struct ext4_fs *fs, bool *read_only)
 {
 	ext4_assert(fs && read_only);
 	uint32_t v;
+	bool inline_ro;
 	if (ext4_get32(&fs->sb, rev_level) == 0) {
 		*read_only = false;
 		return EOK;
@@ -233,6 +234,11 @@ int ext4_fs_check_features(struct ext4_fs *fs, bool *read_only)
 	/*Check features_incompatible*/
 	v = (ext4_get32(&fs->sb, features_incompatible) &
 	     (~CONFIG_SUPPORTED_FINCOM));
+	/* Inline data is read, not written yet (ext4_inline.c): such a
+	 * filesystem is mounted read-only, like one with an unsupported
+	 * read-only feature */
+	inline_ro = (v & EXT4_FINCOM_INLINE_DATA) != 0;
+	v &= ~(uint32_t)EXT4_FINCOM_INLINE_DATA;
 	if (v) {
 		ext4_dbg(DEBUG_FS, DBG_ERROR
 				"sblock has unsupported features incompatible:\n");
@@ -250,7 +256,7 @@ int ext4_fs_check_features(struct ext4_fs *fs, bool *read_only)
 		*read_only = true;
 		return EOK;
 	}
-	*read_only = false;
+	*read_only = inline_ro;
 
 	return EOK;
 }

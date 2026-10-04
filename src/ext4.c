@@ -52,6 +52,7 @@
 #include <ext4_dir_idx.h>
 #include <ext4_xattr.h>
 #include <ext4_journal.h>
+#include <ext4_inline.h>
 
 
 #include <stdlib.h>
@@ -1851,6 +1852,16 @@ static int ext4_fread_no_lock(ext4_file *file, void *buf, size_t size,
 	iblock_last = (uint32_t)((file->fpos + size) / block_size);
 	unalg = (file->fpos) % block_size;
 
+	/* Inline data: the file is in the i-node */
+	if (ext4_inline_has_data(sb, ref.inode)) {
+		size_t n = 0;
+
+		r = ext4_inline_read(sb, ref.inode, file->fpos, buf, size, &n);
+		if (rcnt)
+			*rcnt = n;
+		goto Finish;
+	}
+
 	/*Fast symlink: the target is stored in i_block*/
 	if (ext4_inode_is_fast_symlink(sb, ref.inode)) {
 
@@ -3514,6 +3525,33 @@ int ext4_dir_entry_get(ext4_dir *dir, const ext4_direntry **entry)
 	r = ext4_fs_get_inode_ref(&dir->f.mp->fs, dir->f.inode, &dir_inode);
 	if (r != EOK)
 		goto Finish;
+
+	if (ext4_inline_has_data(&dir->f.mp->fs.sb, dir_inode.inode)) {
+		struct ext4_inline_dirent ide;
+		uint64_t pos = dir->next_off;
+
+		r = ext4_inline_dir_next(&dir->f.mp->fs.sb, dir->f.inode,
+					 dir_inode.inode, &pos, &ide);
+		if (r == EOK) {
+			memset(&dir->de.name, 0, sizeof(dir->de.name));
+			memcpy(&dir->de.name, ide.name, ide.name_len);
+			dir->de.inode = ide.inode;
+			dir->de.entry_length =
+			    ide.en ? ext4_dir_en_get_entry_len(ide.en) : 0;
+			dir->de.name_length = ide.name_len;
+			dir->de.inode_type = ide.type;
+			dir->next_off = pos;
+			*entry = &dir->de;
+		} else if (r == ENOENT) {
+			dir->next_off = EXT4_DIR_ENTRY_OFFSET_TERM;
+			r = EOK;
+		}
+		if (r == EOK)
+			r = ext4_fs_put_inode_ref(&dir_inode);
+		else
+			ext4_fs_put_inode_ref(&dir_inode);
+		goto Finish;
+	}
 
 	/* On an error next_off stays, so the same read is tried again by the
 	 * next call. */

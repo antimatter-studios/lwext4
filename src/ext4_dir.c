@@ -47,6 +47,7 @@
 
 #include <ext4_trans.h>
 #include <ext4_dir.h>
+#include <ext4_inline.h>
 #include <ext4_dir_idx.h>
 #include <ext4_crc32.h>
 #include <ext4_inode.h>
@@ -505,6 +506,11 @@ int ext4_dir_find_entry(struct ext4_dir_search_result *result,
 	/* Entry clear */
 	result->block.lb_id = 0;
 	result->dentry = NULL;
+
+	/* Inline directory: the entry is in the i-node, no block is held */
+	if (ext4_inline_has_data(sb, parent->inode))
+		return ext4_inline_dir_find(sb, parent->inode, name, name_len,
+					    &result->dentry);
 
 #if CONFIG_DIR_INDEX_ENABLE
 	/* "." and ".." are not in the hash tree: they are the first two

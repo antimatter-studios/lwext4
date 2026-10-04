@@ -537,7 +537,8 @@ EOF
 }
 
 step "unsupported features"
-unsupported_incompat inline_data -t ext4 -O inline_data
+# inline_data is read, not written yet: mounted read-only
+unsupported_ro inline_data -t ext4 -O inline_data
 unsupported_incompat large_dir -t ext4 -O large_dir
 unsupported_incompat ea_inode -t ext4 -O ea_inode
 unsupported_incompat journal_dev -O journal_dev
