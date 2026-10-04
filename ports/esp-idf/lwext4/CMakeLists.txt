@@ -26,6 +26,7 @@ set(srcs
     "${lwext4_root}/src/ext4_fs.c"
     "${lwext4_root}/src/ext4_hash.c"
     "${lwext4_root}/src/ext4_ialloc.c"
+    "${lwext4_root}/src/ext4_inline.c"
     "${lwext4_root}/src/ext4_inode.c"
     "${lwext4_root}/src/ext4_journal.c"
     "${lwext4_root}/src/ext4_mbr.c"

@@ -98,6 +98,16 @@ ext4_dir_dx_root_info_set_info_length(struct ext4_dir_idx_rinfo *ri,
  * @param ri Pointer to root info structure of index
  * @return Height of HTree (actually only 0 or 1)
  */
+/* Height of the index path: the root and up to two levels of index nodes
+ * (indirect_levels 2, large_dir). */
+#define EXT4_DIR_DX_PATH_MAX 3
+
+/**@brief Highest indirect_levels of an htree: 1, or 2 with large_dir.*/
+static uint8_t ext4_dir_dx_max_levels(struct ext4_sblock *sb)
+{
+	return ext4_sb_feature_incom(sb, EXT4_FINCOM_LARGEDIR) ? 2 : 1;
+}
+
 static inline uint8_t
 ext4_dir_dx_rinfo_get_indirect_levels(struct ext4_dir_idx_rinfo *ri)
 {
@@ -503,7 +513,7 @@ static int ext4_dir_hinfo_init(struct ext4_hash_info *hinfo,
 		return EXT4_ERR_BAD_DX_DIR;
 
 	/* Check indirect levels */
-	if (root->info.indirect_levels > 1)
+	if (root->info.indirect_levels > ext4_dir_dx_max_levels(sb))
 		return EXT4_ERR_BAD_DX_DIR;
 
 	/* Check if node limit is correct */
@@ -578,8 +588,8 @@ static int ext4_dir_dx_get_leaf(struct ext4_hash_info *hinfo,
 	limit = ext4_dir_dx_climit_get_limit((void *)entries);
 	ind_level = ext4_dir_dx_rinfo_get_indirect_levels(&root->info);
 
-	/* dx_blocks has room for the root and one level of index nodes */
-	if (ind_level > 1)
+	/* dx_blocks has room for EXT4_DIR_DX_PATH_MAX levels */
+	if (ind_level > ext4_dir_dx_max_levels(sb))
 		return EXT4_ERR_BAD_DX_DIR;
 
 	/* Walk through the index tree */
@@ -774,11 +784,7 @@ int ext4_dir_dx_find_entry(struct ext4_dir_search_result *result,
 		return EXT4_ERR_BAD_DX_DIR;
 	}
 
-	/*
-	 * Hardcoded number 2 means maximum height of index tree,
-	 * specified in the Linux driver.
-	 */
-	struct ext4_dir_idx_block dx_blocks[2];
+	struct ext4_dir_idx_block dx_blocks[EXT4_DIR_DX_PATH_MAX];
 	struct ext4_dir_idx_block *dx_block;
 	struct ext4_dir_idx_block *tmp;
 
@@ -1096,166 +1102,143 @@ static int ext4_dir_dx_split_data(struct ext4_inode_ref *inode_ref,
 	return EOK;
 }
 
-/**@brief  Split index node and maybe some parent nodes in the tree hierarchy.
- * @param ino_ref Directory i-node
- * @param dx_blks Array with path from root to leaf node
- * @param dxb  Leaf block to be split if needed
- * @return Error code
- */
-static int
-ext4_dir_dx_split_index(struct ext4_inode_ref *ino_ref,
-			struct ext4_dir_idx_block *dx_blks,
-			struct ext4_dir_idx_block *dxb,
-			struct ext4_dir_idx_block **new_dx_block)
+/**@brief Number of entries an index node (not the root) holds.*/
+static uint16_t ext4_dir_dx_node_limit(struct ext4_sblock *sb)
 {
-	struct ext4_sblock *sb = &ino_ref->fs->sb;
-	struct ext4_dir_idx_entry *e;
-	int r;
-
-	uint32_t block_size = ext4_sb_get_block_size(&ino_ref->fs->sb);
-	uint32_t entry_space = block_size - sizeof(struct ext4_fake_dir_entry);
-	bool meta_csum = ext4_sb_feature_ro_com(sb, EXT4_FRO_COM_METADATA_CSUM);
+	uint32_t space = ext4_sb_get_block_size(sb) -
+			 sizeof(struct ext4_fake_dir_entry);
 
 	/* With metadata_csum the node ends with a checksum tail */
-	if (meta_csum)
-		entry_space -= sizeof(struct ext4_dir_idx_tail);
+	if (ext4_sb_feature_ro_com(sb, EXT4_FRO_COM_METADATA_CSUM))
+		space -= sizeof(struct ext4_dir_idx_tail);
+	return (uint16_t)(space / sizeof(struct ext4_dir_idx_entry));
+}
 
-	uint32_t node_limit =  entry_space / sizeof(struct ext4_dir_idx_entry);
+static bool ext4_dir_dx_full(struct ext4_dir_idx_block *dxb)
+{
+	struct ext4_dir_idx_climit *c = (void *)dxb->entries;
 
-	if (dxb == dx_blks)
-		e = ((struct ext4_dir_idx_root *)dxb->b.data)->en;
-	else
-		e = ((struct ext4_dir_idx_node *)dxb->b.data)->entries;
+	return ext4_dir_dx_climit_get_count(c) >=
+	       ext4_dir_dx_climit_get_limit(c);
+}
 
-	struct ext4_dir_idx_climit *climit = (struct ext4_dir_idx_climit *)e;
+static void ext4_dir_dx_set_dirty(struct ext4_inode_ref *ino_ref,
+				  struct ext4_block *b)
+{
+	ext4_dir_set_dx_csum(ino_ref, (void *)b->data);
+	ext4_trans_set_block_dirty(b->buf);
+}
 
-	uint16_t leaf_limit = ext4_dir_dx_climit_get_limit(climit);
-	uint16_t leaf_count = ext4_dir_dx_climit_get_count(climit);
+/**@brief Make room for one more entry in an index node of the path,
+ *        splitting it into its parent (which gets room first the same
+ *        way) or, for a full root, adding a level of index nodes under
+ *        it if the filesystem allows (large_dir: two levels, else one).
+ * @param ino_ref Directory i-node
+ * @param dx_blks Path from the root (dx_blks[0]) to the node
+ * @param dxbp    The node (in dx_blks); afterwards the node of the path
+ *                that has the room: a new level shifts the path down by
+ *                one, a split may continue the path in the new half.
+ * @return Error code, ENOSPC if the tree cannot grow*/
+static int ext4_dir_dx_make_room(struct ext4_inode_ref *ino_ref,
+				 struct ext4_dir_idx_block *dx_blks,
+				 struct ext4_dir_idx_block **dxbp)
+{
+	struct ext4_sblock *sb = &ino_ref->fs->sb;
+	struct ext4_dir_idx_block *dxb = *dxbp;
+	struct ext4_dir_idx_root *root = (void *)dx_blks[0].b.data;
+	uint8_t levels = root->info.indirect_levels;
+	uint16_t node_limit = ext4_dir_dx_node_limit(sb);
+	struct ext4_dir_idx_entry *e, *new_en;
+	struct ext4_dir_idx_node *new_node;
+	ext4_fsblk_t new_fblk;
+	uint32_t new_iblk;
+	uint16_t count;
+	struct ext4_block b;
+	int r;
 
-	/* Check if is necessary to split index block */
-	if (leaf_limit == leaf_count) {
-		struct ext4_dir_idx_entry *ren;
-		ptrdiff_t levels = dxb - dx_blks;
+	if (!ext4_dir_dx_full(dxb))
+		return EOK;
 
-		ren = ((struct ext4_dir_idx_root *)dx_blks[0].b.data)->en;
-		struct ext4_dir_idx_climit *rclimit = (void *)ren;
-		uint16_t root_limit = ext4_dir_dx_climit_get_limit(rclimit);
-		uint16_t root_count = ext4_dir_dx_climit_get_count(rclimit);
+	if (dxb != dx_blks) {
+		struct ext4_dir_idx_block *parent = dxb - 1;
 
-
-		/* Linux limitation */
-		if ((levels > 0) && (root_limit == root_count))
-			return ENOSPC;
-
-		/* Add new block to directory */
-		ext4_fsblk_t new_fblk;
-		uint32_t new_iblk;
-		r = ext4_fs_append_inode_dblk(ino_ref, &new_fblk, &new_iblk);
+		r = ext4_dir_dx_make_room(ino_ref, dx_blks, &parent);
 		if (r != EOK)
 			return r;
-
-		/* load new block */
-		struct ext4_block b;
-		r = ext4_trans_block_get_noread(ino_ref->fs->bdev, &b, new_fblk);
-		if (r != EOK)
-			return r;
-
-		struct ext4_dir_idx_node *new_node = (void *)b.data;
-		struct ext4_dir_idx_entry *new_en = new_node->entries;
-
-		memset(&new_node->fake, 0, sizeof(struct ext4_fake_dir_entry));
-		new_node->fake.entry_length = to_le16(block_size);
-
-		/* Split leaf node */
-		if (levels > 0) {
-			uint32_t count_left = leaf_count / 2;
-			uint32_t count_right = leaf_count - count_left;
-			uint32_t hash_right;
-			size_t sz;
-
-			struct ext4_dir_idx_climit *left_climit;
-			struct ext4_dir_idx_climit *right_climit;
-
-			hash_right = ext4_dir_dx_entry_get_hash(e + count_left);
-			/* Copy data to new node */
-			sz = count_right * sizeof(struct ext4_dir_idx_entry);
-			memcpy(new_en, e + count_left, sz);
-
-			/* Initialize new node */
-			left_climit = (struct ext4_dir_idx_climit *)e;
-			right_climit = (struct ext4_dir_idx_climit *)new_en;
-
-			ext4_dir_dx_climit_set_count(left_climit, count_left);
-			ext4_dir_dx_climit_set_count(right_climit, count_right);
-
-			ext4_dir_dx_climit_set_limit(right_climit, node_limit);
-
-			/* Which index block is target for new entry */
-			uint32_t position_index =
-			    (dxb->position - dxb->entries);
-			if (position_index >= count_left) {
-				ext4_dir_set_dx_csum(
-						ino_ref,
-						(struct ext4_dir_en *)
-						dxb->b.data);
-				ext4_trans_set_block_dirty(dxb->b.buf);
-
-				struct ext4_block block_tmp = dxb->b;
-
-				dxb->b = b;
-
-				dxb->position =
-				    new_en + position_index - count_left;
-				dxb->entries = new_en;
-
-				b = block_tmp;
-			}
-
-			/* Finally insert new entry */
-			ext4_dir_dx_insert_entry(ino_ref, dx_blks, hash_right,
-						 new_iblk);
-			ext4_dir_set_dx_csum(ino_ref, (void*)dx_blks[0].b.data);
-			ext4_dir_set_dx_csum(ino_ref, (void*)dx_blks[1].b.data);
-			ext4_trans_set_block_dirty(dx_blks[0].b.buf);
-			ext4_trans_set_block_dirty(dx_blks[1].b.buf);
-
-			ext4_dir_set_dx_csum(ino_ref, (void *)b.data);
-			ext4_trans_set_block_dirty(b.buf);
-			return ext4_block_set(ino_ref->fs->bdev, &b);
-		} else {
-			size_t sz;
-			/* Copy data from root to child block */
-			sz = leaf_count * sizeof(struct ext4_dir_idx_entry);
-			memcpy(new_en, e, sz);
-
-			struct ext4_dir_idx_climit *new_climit = (void*)new_en;
-
-			ext4_dir_dx_climit_set_limit(new_climit, node_limit);
-
-			/* Set values in root node */
-			struct ext4_dir_idx_climit *new_root_climit = (void *)e;
-
-			ext4_dir_dx_climit_set_count(new_root_climit, 1);
-			ext4_dir_dx_entry_set_block(e, new_iblk);
-
-			struct ext4_dir_idx_root *r = (void *)dx_blks[0].b.data;
-			r->info.indirect_levels = 1;
-
-			/* Add new entry to the path */
-			dxb = dx_blks + 1;
-			dxb->position = dx_blks->position - e + new_en;
-			dxb->entries = new_en;
-			dxb->b = b;
-			*new_dx_block = dxb;
-
-			ext4_dir_set_dx_csum(ino_ref, (void*)dx_blks[0].b.data);
-			ext4_dir_set_dx_csum(ino_ref, (void*)dx_blks[1].b.data);
-			ext4_trans_set_block_dirty(dx_blks[0].b.buf);
-			ext4_trans_set_block_dirty(dx_blks[1].b.buf);
-		}
+		/* A new level under the root shifted the path */
+		dxb = parent + 1;
+	} else if (levels >= ext4_dir_dx_max_levels(sb)) {
+		return ENOSPC;
 	}
 
-	return EOK;
+	r = ext4_fs_append_inode_dblk(ino_ref, &new_fblk, &new_iblk);
+	if (r != EOK)
+		return r;
+
+	r = ext4_trans_block_get_noread(ino_ref->fs->bdev, &b, new_fblk);
+	if (r != EOK)
+		return r;
+
+	new_node = (void *)b.data;
+	memset(&new_node->fake, 0, sizeof(struct ext4_fake_dir_entry));
+	new_node->fake.entry_length = to_le16(ext4_sb_get_block_size(sb));
+	new_en = new_node->entries;
+	e = dxb->entries;
+	count = ext4_dir_dx_climit_get_count((void *)e);
+
+	if (dxb == dx_blks) {
+		/* New level: the root's entries move to the new node, the
+		 * root keeps one entry, pointing to it */
+		memcpy(new_en, e, count * sizeof(struct ext4_dir_idx_entry));
+		ext4_dir_dx_climit_set_limit((void *)new_en, node_limit);
+		ext4_dir_dx_climit_set_count((void *)e, 1);
+		ext4_dir_dx_entry_set_block(e, new_iblk);
+		root->info.indirect_levels = levels + 1;
+
+		memmove(dx_blks + 2, dx_blks + 1,
+			levels * sizeof(struct ext4_dir_idx_block));
+		dx_blks[1].b = b;
+		dx_blks[1].entries = new_en;
+		dx_blks[1].position = new_en + (dx_blks[0].position - e);
+		dx_blks[0].position = e;
+
+		ext4_dir_dx_set_dirty(ino_ref, &dx_blks[0].b);
+		ext4_dir_dx_set_dirty(ino_ref, &dx_blks[1].b);
+		*dxbp = dx_blks + 1;
+		return EOK;
+	}
+
+	/* Split: the upper half moves to the new node, whose first hash
+	 * goes into the parent after the entry of this node */
+	uint16_t left = count / 2;
+	uint16_t right = count - left;
+	uint32_t pos = (uint32_t)(dxb->position - e);
+	uint32_t hash_right = ext4_dir_dx_entry_get_hash(e + left);
+	struct ext4_dir_idx_block *parent = dxb - 1;
+
+	memcpy(new_en, e + left, right * sizeof(struct ext4_dir_idx_entry));
+	ext4_dir_dx_climit_set_count((void *)e, left);
+	ext4_dir_dx_climit_set_limit((void *)new_en, node_limit);
+	ext4_dir_dx_climit_set_count((void *)new_en, right);
+
+	ext4_dir_dx_insert_entry(ino_ref, parent, hash_right, new_iblk);
+
+	if (pos >= left) {
+		/* The path continues in the new node */
+		struct ext4_block old = dxb->b;
+
+		ext4_dir_dx_set_dirty(ino_ref, &old);
+		dxb->b = b;
+		dxb->entries = new_en;
+		dxb->position = new_en + (pos - left);
+		parent->position++;
+		b = old;
+	}
+
+	ext4_dir_dx_set_dirty(ino_ref, &dxb->b);
+	ext4_dir_dx_set_dirty(ino_ref, &b);
+	*dxbp = dxb;
+	return ext4_block_set(ino_ref->fs->bdev, &b);
 }
 
 int ext4_dir_dx_add_entry(struct ext4_inode_ref *parent,
@@ -1293,11 +1276,7 @@ int ext4_dir_dx_add_entry(struct ext4_inode_ref *parent,
 		return EXT4_ERR_BAD_DX_DIR;
 	}
 
-	/*
-	 * Hardcoded number 2 means maximum height of index
-	 * tree defined in Linux.
-	 */
-	struct ext4_dir_idx_block dx_blks[2];
+	struct ext4_dir_idx_block dx_blks[EXT4_DIR_DX_PATH_MAX];
 	struct ext4_dir_idx_block *dx_blk;
 	struct ext4_dir_idx_block *dx_it;
 
@@ -1322,9 +1301,9 @@ int ext4_dir_dx_add_entry(struct ext4_inode_ref *parent,
 	 * Check if there is needed to split index node
 	 * (and recursively also parent nodes)
 	 */
-	r = ext4_dir_dx_split_index(parent, dx_blks, dx_blk, &dx_blk);
+	r = ext4_dir_dx_make_room(parent, dx_blks, &dx_blk);
 	if (r != EOK)
-		goto release_target_index;
+		goto release_index; /* target_block is not loaded yet */
 
 	struct ext4_block target_block;
 	r = ext4_trans_block_get(fs->bdev, &target_block, leaf_block_addr);

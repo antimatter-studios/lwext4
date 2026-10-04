@@ -46,6 +46,7 @@
 
 #include <ext4_trans.h>
 #include <ext4_fs.h>
+#include <ext4_inline.h>
 #include <ext4_blockdev.h>
 #include <ext4_super.h>
 #include <ext4_crc32.h>
@@ -216,6 +217,7 @@ int ext4_fs_check_features(struct ext4_fs *fs, bool *read_only)
 {
 	ext4_assert(fs && read_only);
 	uint32_t v;
+	bool inline_ro;
 	if (ext4_get32(&fs->sb, rev_level) == 0) {
 		*read_only = false;
 		return EOK;
@@ -233,6 +235,13 @@ int ext4_fs_check_features(struct ext4_fs *fs, bool *read_only)
 	/*Check features_incompatible*/
 	v = (ext4_get32(&fs->sb, features_incompatible) &
 	     (~CONFIG_SUPPORTED_FINCOM));
+	/* Inline data (ext4_inline.c) is written by moving it to a block
+	 * first, which needs the xattr code (system.data); without it such a
+	 * filesystem is mounted read-only, like one with an unsupported
+	 * read-only feature */
+	inline_ro = !CONFIG_XATTR_ENABLE &&
+		    (v & EXT4_FINCOM_INLINE_DATA) != 0;
+	v &= ~(uint32_t)EXT4_FINCOM_INLINE_DATA;
 	if (v) {
 		ext4_dbg(DEBUG_FS, DBG_ERROR
 				"sblock has unsupported features incompatible:\n");
@@ -250,7 +259,7 @@ int ext4_fs_check_features(struct ext4_fs *fs, bool *read_only)
 		*read_only = true;
 		return EOK;
 	}
-	*read_only = false;
+	*read_only = inline_ro;
 
 	return EOK;
 }
@@ -1364,6 +1373,12 @@ int ext4_fs_truncate_inode(struct ext4_inode_ref *inode_ref, uint64_t new_size)
 	if (old_size < new_size)
 		return EINVAL;
 
+#if CONFIG_XATTR_ENABLE
+	/* Inline data: no blocks to release */
+	if (ext4_inline_has_data(sb, inode_ref->inode))
+		return ext4_inline_truncate(inode_ref, new_size);
+#endif
+
 	/* Fast symlink: the target is stored in i_block, no data blocks */
 	if (ext4_inode_is_fast_symlink(sb, inode_ref->inode)) {
 		char *content = (char *)inode_ref->inode->blocks + new_size;
@@ -1476,8 +1491,9 @@ int ext4_fs_indirect_find_goal(struct ext4_inode_ref *inode_ref,
 
 	/* If inode has some blocks, get last block address + 1 */
 	if (iblock_cnt > 0) {
+		/* (a hole gives no goal, below) */
 		r = ext4_fs_get_inode_dblk_idx(inode_ref, iblock_cnt - 1,
-					       goal, false);
+					       goal, true);
 		if (r != EOK)
 			return r;
 
@@ -1559,8 +1575,6 @@ static int ext4_fs_get_inode_dblk_idx_internal(struct ext4_inode_ref *inode_ref,
 
 		current_block = current_fsblk;
 		*fblock = current_block;
-
-		ext4_assert(*fblock || support_unwritten);
 		return EOK;
 	}
 #endif
@@ -1645,12 +1659,75 @@ static int ext4_fs_get_inode_dblk_idx_internal(struct ext4_inode_ref *inode_ref,
 }
 
 
+int ext4_fs_bmap_hole_end(struct ext4_inode_ref *inode_ref,
+			  ext4_lblk_t iblock, uint64_t *next)
+{
+	struct ext4_fs *fs = inode_ref->fs;
+	struct ext4_inode *inode = inode_ref->inode;
+	ext4_fsblk_t current_block;
+	uint64_t off;
+	unsigned int l = 0, i;
+
+	*next = (uint64_t)iblock + 1;
+	if (iblock < EXT4_INODE_DIRECT_BLOCK_COUNT)
+		return EOK;
+
+	for (i = 1; i < 4; i++) {
+		if (iblock < fs->inode_block_limits[i]) {
+			l = i;
+			break;
+		}
+	}
+	if (l == 0) {
+		/* Past what a block map reaches */
+		*next = UINT64_MAX;
+		return EOK;
+	}
+
+	/* An empty indirect slot of the i-node: its whole level */
+	current_block = ext4_inode_get_indirect_block(inode, l - 1);
+	if (!current_block) {
+		*next = fs->inode_block_limits[l];
+		return EOK;
+	}
+
+	off = iblock - fs->inode_block_limits[l - 1];
+	while (l > 0) {
+		struct ext4_block block;
+		uint64_t per = fs->inode_blocks_per_level[l - 1];
+		int rc = ext4_trans_block_get(fs->bdev, &block, current_block);
+
+		if (rc != EOK)
+			return rc;
+		current_block = to_le32(((uint32_t *)block.data)[off / per]);
+		rc = ext4_block_set(fs->bdev, &block);
+		if (rc != EOK)
+			return rc;
+
+		/* An empty pointer: the blocks it would cover */
+		if (!current_block) {
+			*next = iblock - off % per + per;
+			return EOK;
+		}
+		off %= per;
+		l--;
+	}
+	return EOK;
+}
+
 int ext4_fs_get_inode_dblk_idx(struct ext4_inode_ref *inode_ref,
 			       ext4_lblk_t iblock, ext4_fsblk_t *fblock,
 			       bool support_unwritten)
 {
-	return ext4_fs_get_inode_dblk_idx_internal(inode_ref, iblock, fblock,
-						   false, support_unwritten);
+	int r = ext4_fs_get_inode_dblk_idx_internal(inode_ref, iblock, fblock,
+						    false, support_unwritten);
+
+	/* A caller that does not take holes (htree and journal blocks) gets
+	 * an error for one: the metadata is damaged. Asserting, or block 0,
+	 * would take the program down on a damaged image. */
+	if (r == EOK && !*fblock && !support_unwritten)
+		return EIO;
+	return r;
 }
 
 static int ext4_fs_set_inode_data_block_index(struct ext4_inode_ref *inode_ref,
@@ -1872,7 +1949,9 @@ int ext4_fs_append_inode_dblk(struct ext4_inode_ref *inode_ref,
 			return rc;
 
 		*fblock = current_fsblk;
-		ext4_assert(*fblock);
+		/* Block 0 is the boot block or superblock */
+		if (!*fblock)
+			return EIO;
 
 		ext4_inode_set_size(inode_ref->inode, inode_size + block_size);
 		inode_ref->dirty = true;

@@ -526,6 +526,10 @@ int jbd_inode_bmap(struct jbd_fs *jbd_fs,
 			iblock,
 			fblock,
 			false);
+	/* The journal is allocated in full: a hole is damage (Linux:
+	 * jbd2_journal_bmap), not block 0 */
+	if (rc == EOK && !*fblock)
+		return EIO;
 	return rc;
 }
 

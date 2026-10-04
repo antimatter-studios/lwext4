@@ -119,6 +119,9 @@ struct file_model {
 	size_t xattr_len;
 	uint8_t xattr[MAX_XATTR];
 	bool attrs_known;
+	/* The times are what op_attrs set: no write, truncate, rename, link
+	 * or xattr change (which stamp them, see ext4_clock_setup) since */
+	bool times_known;
 	uint32_t mode, uid, gid, mtime;
 };
 
@@ -238,6 +241,7 @@ static void op_create(struct worker *w, int k)
 	ext4_file f;
 	uint32_t size = rnd_below(w, MAX_FILE + 1);
 
+	m->times_known = false;
 	file_path(path, sizeof(path), w->id, k, m->shared);
 	rnd_bytes(w, m->data, size);
 	API_EQ(EOK, ext4_fopen(&f, path, "wb"));
@@ -260,6 +264,7 @@ static void op_append(struct worker *w, int k)
 	ext4_file f;
 	uint32_t n = rnd_below(w, MAX_FILE - m->size + 1);
 
+	m->times_known = false;
 	file_path(path, sizeof(path), w->id, k, m->shared);
 	rnd_bytes(w, m->data + m->size, n);
 	API_EQ(EOK, ext4_fopen(&f, path, "ab"));
@@ -277,6 +282,7 @@ static void op_overwrite(struct worker *w, int k)
 	uint32_t off = rnd_below(w, m->size + 1);
 	uint32_t n = rnd_below(w, MAX_FILE - off + 1);
 
+	m->times_known = false;
 	file_path(path, sizeof(path), w->id, k, m->shared);
 	rnd_bytes(w, m->data + off, n);
 	API_EQ(EOK, ext4_fopen(&f, path, "r+b"));
@@ -294,6 +300,7 @@ static void op_truncate(struct worker *w, int k)
 	ext4_file f;
 	uint32_t size = rnd_below(w, m->size + 1);
 
+	m->times_known = false;
 	file_path(path, sizeof(path), w->id, k, m->shared);
 	API_EQ(EOK, ext4_fopen(&f, path, "r+b"));
 	API_EQ(EOK, ext4_ftruncate(&f, size));
@@ -307,6 +314,7 @@ static void op_rename(struct worker *w, int k)
 	struct file_model *m = &w->files[k];
 	char from[64], to[64];
 
+	m->times_known = false;
 	file_path(from, sizeof(from), w->id, k, m->shared);
 	file_path(to, sizeof(to), w->id, k, !m->shared);
 	API_EQ(EOK, ext4_frename(from, to));
@@ -320,6 +328,7 @@ static void op_hardlink(struct worker *w, int k)
 	struct file_model *m = &w->files[k];
 	char path[64], link[64];
 
+	m->times_known = false;
 	file_path(path, sizeof(path), w->id, k, m->shared);
 	snprintf(link, sizeof(link), SHARED_DIR "/t%d_h%d", w->id, k);
 	API_EQ(EOK, ext4_flink(path, link));
@@ -349,6 +358,7 @@ static void op_xattr(struct worker *w, int k)
 	size_t len, list_len;
 	bool listed = false;
 
+	m->times_known = false;
 	file_path(path, sizeof(path), w->id, k, m->shared);
 	snprintf(name, sizeof(name), "user.t%d", w->id);
 
@@ -389,7 +399,7 @@ static void op_attrs(struct worker *w, int k)
 	uint32_t ino = 0, mode, uid, gid, mtime, t;
 
 	file_path(path, sizeof(path), w->id, k, m->shared);
-	if (!m->attrs_known || rnd_below(w, 2)) {
+	if (!m->attrs_known || !m->times_known || rnd_below(w, 2)) {
 		m->mode = rnd_below(w, 01000);
 		m->uid = rnd_below(w, 70000);
 		m->gid = rnd_below(w, 70000);
@@ -400,6 +410,7 @@ static void op_attrs(struct worker *w, int k)
 		API_EQ(EOK, ext4_atime_set(path, m->mtime + 1));
 		API_EQ(EOK, ext4_ctime_set(path, m->mtime + 2));
 		m->attrs_known = true;
+		m->times_known = true;
 	}
 	API_EQ(EOK, ext4_mode_get(path, &mode));
 	CHECK_EQ(m->mode, mode & 0777);

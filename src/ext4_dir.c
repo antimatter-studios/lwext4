@@ -47,6 +47,8 @@
 
 #include <ext4_trans.h>
 #include <ext4_dir.h>
+#include <ext4_extent.h>
+#include <ext4_inline.h>
 #include <ext4_dir_idx.h>
 #include <ext4_crc32.h>
 #include <ext4_inode.h>
@@ -224,6 +226,32 @@ static int ext4_dir_iterator_set(struct ext4_dir_iter *it,
 	return EOK;
 }
 
+/* The block of a directory to look at after the hole at iblock (a damaged
+ * size may make a hole of millions of blocks): the next mapped one with
+ * extents, the end of what the zero pointer covers with a block map. */
+static int ext4_dir_skip_hole(struct ext4_inode_ref *ref, uint32_t iblock,
+			      uint64_t *next)
+{
+	*next = (uint64_t)iblock + 1;
+#if CONFIG_EXTENT_ENABLE && CONFIG_EXTENTS_ENABLE
+	struct ext4_sblock *sb = &ref->fs->sb;
+	ext4_lblk_t mapped;
+	int r;
+
+	if (ext4_sb_feature_incom(sb, EXT4_FINCOM_EXTENTS) &&
+	    ext4_inode_has_flag(ref->inode, EXT4_INODE_FLAG_EXTENTS)) {
+		r = ext4_extent_next_mapped(ref, iblock, &mapped);
+		if (r != EOK)
+			return r;
+		if (mapped > iblock)
+			*next = mapped;
+		return EOK;
+	}
+#endif
+	/* Block map: a zero pointer covers a whole range */
+	return ext4_fs_bmap_hole_end(ref, iblock, next);
+}
+
 /**@brief Seek to next valid directory entry.
  *        Here can be jumped to the next data block.
  *        Holes in the directory are skipped.
@@ -271,8 +299,15 @@ static int ext4_dir_iterator_seek(struct ext4_dir_iter *it, uint64_t pos)
 			return r;
 
 		if (next_blk == 0) {
-			/* Hole in the directory: continue at the next block */
-			pos = ((uint64_t)next_blk_idx + 1) * block_size;
+			/* Hole in the directory: continue after it */
+			uint64_t next;
+
+			r = ext4_dir_skip_hole(it->inode_ref, next_blk_idx,
+					       &next);
+			if (r != EOK)
+				return r;
+			pos = next < size / block_size + 1 ? next * block_size
+							   : size;
 			continue;
 		}
 
@@ -391,6 +426,13 @@ void ext4_dir_write_entry(struct ext4_sblock *sb, struct ext4_dir_en *en,
 int ext4_dir_add_entry(struct ext4_inode_ref *parent, const char *name,
 		       uint32_t name_len, struct ext4_inode_ref *child)
 {
+#if CONFIG_XATTR_ENABLE
+	/* An inline directory moves to a block first */
+	int rc = ext4_inline_convert(parent);
+	if (rc != EOK)
+		return rc;
+#endif
+
 	int r;
 	struct ext4_fs *fs = parent->fs;
 	struct ext4_sblock *sb = &parent->fs->sb;
@@ -428,9 +470,18 @@ int ext4_dir_add_entry(struct ext4_inode_ref *parent, const char *name,
 		if (r != EOK)
 			return r;
 
-		/* Hole in the directory */
-		if (fblock == 0)
+		/* Hole in the directory: continue after it */
+		if (fblock == 0) {
+			uint64_t next;
+
+			r = ext4_dir_skip_hole(parent, iblock, &next);
+			if (r != EOK)
+				return r;
+			if (next >= total_blocks)
+				break;
+			iblock = (uint32_t)next - 1;
 			continue;
+		}
 
 		struct ext4_block block;
 		r = ext4_trans_block_get(fs->bdev, &block, fblock);
@@ -506,6 +557,11 @@ int ext4_dir_find_entry(struct ext4_dir_search_result *result,
 	result->block.lb_id = 0;
 	result->dentry = NULL;
 
+	/* Inline directory: the entry is in the i-node, no block is held */
+	if (ext4_inline_has_data(sb, parent->inode))
+		return ext4_inline_dir_find(sb, parent->inode, name, name_len,
+					    &result->dentry);
+
 #if CONFIG_DIR_INDEX_ENABLE
 	/* "." and ".." are not in the hash tree: they are the first two
 	 * entries of block 0 (the index root), where the linear search below
@@ -547,9 +603,18 @@ int ext4_dir_find_entry(struct ext4_dir_search_result *result,
 		if (r != EOK)
 			return r;
 
-		/* Hole in the directory */
-		if (fblock == 0)
+		/* Hole in the directory: continue after it */
+		if (fblock == 0) {
+			uint64_t next;
+
+			r = ext4_dir_skip_hole(parent, iblock, &next);
+			if (r != EOK)
+				return r;
+			if (next >= total_blocks)
+				break;
+			iblock = (uint32_t)next - 1;
 			continue;
+		}
 
 		/* Load data block */
 		struct ext4_block b;
@@ -592,6 +657,12 @@ int ext4_dir_find_entry(struct ext4_dir_search_result *result,
 int ext4_dir_remove_entry(struct ext4_inode_ref *parent, const char *name,
 			  uint32_t name_len)
 {
+#if CONFIG_XATTR_ENABLE
+	int rc0 = ext4_inline_convert(parent);
+	if (rc0 != EOK)
+		return rc0;
+#endif
+
 	struct ext4_sblock *sb = &parent->fs->sb;
 	/* Check if removing from directory */
 	if (!ext4_inode_is_type(sb, parent->inode, EXT4_INODE_MODE_DIRECTORY))
