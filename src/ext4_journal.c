@@ -1630,7 +1630,11 @@ static int jbd_journal_alloc_block(struct jbd_journal *journal,
 		r = jbd_journal_purge_cp_trans(journal, true, true);
 		if (r != EOK)
 			return r;
-		ext4_assert(journal->last != journal->start);
+		/* Still full: this transaction alone needs more than the
+		 * journal holds (a journal below the jbd2 minimum of 1024
+		 * blocks). It cannot be committed (fork issue #174). */
+		if (journal->last == journal->start)
+			return ENOSPC;
 	}
 
 	return EOK;
@@ -2477,7 +2481,7 @@ static int __jbd_journal_commit_trans(struct jbd_journal *journal,
 			jbd_journal_cp_trans(journal, trans);
 	}
 Finish:
-	if (rc != EOK && rc != ENOSPC) {
+	if (rc != EOK) {
 		journal->last = last;
 		jbd_journal_free_trans(journal, trans, true);
 	}

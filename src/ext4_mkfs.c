@@ -145,8 +145,8 @@ static uint32_t compute_journal_blocks(struct ext4_mkfs_info *info)
 {
 	uint32_t journal_blocks = (uint32_t)EXT4_DIV_ROUND_UP(info->len,
 						 info->block_size) / 64;
-	if (journal_blocks < 1024)
-		journal_blocks = 1024;
+	if (journal_blocks < EXT4_MKFS_MIN_JOURNAL_BLOCKS)
+		journal_blocks = EXT4_MKFS_MIN_JOURNAL_BLOCKS;
 	if (journal_blocks > 32768)
 		journal_blocks = 32768;
 	return journal_blocks;
@@ -752,6 +752,13 @@ int ext4_mkfs(struct ext4_fs *fs, struct ext4_blockdev *bd,
 
 	if (info->journal_blocks == 0)
 		info->journal_blocks = compute_journal_blocks(info);
+
+	/* The jbd2 minimum: mke2fs refuses less, Linux does not load such a
+	 * journal, and lwext4's own transactions may not fit */
+	if (info->journal && info->journal_blocks < EXT4_MKFS_MIN_JOURNAL_BLOCKS) {
+		r = EINVAL;
+		goto block_fini;
+	}
 
 	if (info->blocks_per_group == 0)
 		info->blocks_per_group = compute_blocks_per_group(info);
