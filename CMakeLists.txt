@@ -78,6 +78,20 @@ else()
     add_subdirectory(examples)
 endif()
 
+# Build options of include/ext4_config.h for this build, after the target's:
+#   cmake -DLWEXT4_CONFIG="CONFIG_DEBUG_PRINTF=0;CONFIG_DEBUG_ASSERT=0" ...
+set(LWEXT4_CONFIG "" CACHE STRING
+    "CONFIG_ options of ext4_config.h, NAME=VALUE separated by ;")
+foreach(option ${LWEXT4_CONFIG})
+    if(NOT option MATCHES "^CONFIG_[A-Z0-9_]+=")
+        message(FATAL_ERROR "LWEXT4_CONFIG: '${option}' is not CONFIG_NAME=VALUE")
+    endif()
+    string(REGEX REPLACE "=.*$" "" name "${option}")
+    get_property(defs DIRECTORY PROPERTY COMPILE_DEFINITIONS)
+    list(FILTER defs EXCLUDE REGEX "^${name}(=|$)")
+    set_property(DIRECTORY PROPERTY COMPILE_DEFINITIONS ${defs} ${option})
+endforeach()
+
 macro(output_configure)
     get_property(
         definitions

@@ -201,9 +201,14 @@ def configuration(site):
 
 lwext4 is configured at build time with `CONFIG_` macros. Each has a
 default in [`include/ext4_config.h`](%s); set them with `-D` on the compiler
-command line, in a generated `generated/ext4_config.h` (CMake does that from
-its cache unless `CONFIG_USE_DEFAULT_CFG` is set), or with the CMake
-options of the same names.
+command line, or in `generated/ext4_config.h`, which the CMake build writes
+(with the target's options, see CMakeLists.txt) unless
+`CONFIG_USE_DEFAULT_CFG` is set. With CMake, add or override options with
+`LWEXT4_CONFIG`:
+
+```sh
+cmake -DLWEXT4_CONFIG="CONFIG_DEBUG_PRINTF=0;CONFIG_DEBUG_ASSERT=0" ...
+```
 
 The feature level selects the filesystem features the library supports:
 `CONFIG_EXT_FEATURE_SET_LVL` is `F_SET_EXT2`, `F_SET_EXT3` or `F_SET_EXT4`
