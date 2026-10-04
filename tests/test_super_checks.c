@@ -65,8 +65,8 @@ static const struct patch bad[] = {
 	{"first data block beyond the end", S_FIRST_DATA_BLOCK, 4, 20000},
 	{"more inodes than the groups hold", S_INODES_COUNT, 4, 1000000},
 	{"too many reserved descriptor blocks", S_RESERVED_GDT_BLOCKS, 2, 300},
-	{"unsupported incompatible feature (inline_data)", S_FEATURE_INCOMPAT,
-	 0, 0x8000},
+	{"unsupported incompatible feature (ea_inode)", S_FEATURE_INCOMPAT,
+	 0, 0x0400},
 	{"unknown incompatible feature", S_FEATURE_INCOMPAT, 0, 0x80000000},
 };
 
