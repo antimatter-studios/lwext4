@@ -48,6 +48,8 @@
 #include <ext4_inode.h>
 #include <ext4_super.h>
 
+#include <string.h>
+
 /**@brief  Compute number of bits for block count.
  * @param block_size Filesystem block_size
  * @return Number of bits
@@ -63,6 +65,17 @@ static uint32_t ext4_inode_block_bits_count(uint32_t block_size)
 	} while (size > 256);
 
 	return bits;
+}
+
+void ext4_inode_copy(struct ext4_sblock *sb, struct ext4_inode *dst,
+		     const struct ext4_inode *src)
+{
+	size_t n = ext4_get16(sb, inode_size);
+
+	if (n > sizeof(*dst))
+		n = sizeof(*dst);
+	memcpy(dst, src, n);
+	memset((uint8_t *)dst + n, 0, sizeof(*dst) - n);
 }
 
 uint32_t ext4_inode_get_mode(struct ext4_sblock *sb, struct ext4_inode *inode)

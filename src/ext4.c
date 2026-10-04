@@ -2736,7 +2736,7 @@ int ext4_raw_inode_fill(const char *path, uint32_t *ret_ino,
 	if (ret_ino)
 		*ret_ino = f.inode;
 
-	memcpy(inode, inode_ref.inode, sizeof(struct ext4_inode));
+	ext4_inode_copy(&mp->fs.sb, inode, inode_ref.inode);
 	ext4_fs_put_inode_ref(&inode_ref);
 	EXT4_MP_UNLOCK(mp);
 

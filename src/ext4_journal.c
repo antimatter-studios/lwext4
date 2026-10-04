@@ -476,8 +476,7 @@ int jbd_get_fs(struct ext4_fs *fs,
 	 * the first regular files...) on the checkpoint queue until the
 	 * journal wraps around.
 	 */
-	memcpy(&jbd_fs->inode, jbd_fs->inode_ref.inode,
-	       sizeof(struct ext4_inode));
+	ext4_inode_copy(&fs->sb, &jbd_fs->inode, jbd_fs->inode_ref.inode);
 	rc = ext4_fs_put_inode_ref(&jbd_fs->inode_ref);
 	if (rc != EOK) {
 		memset(jbd_fs, 0, sizeof(struct jbd_fs));

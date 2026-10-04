@@ -58,6 +58,16 @@ extern "C" {
  */
 uint32_t ext4_inode_get_mode(struct ext4_sblock *sb, struct ext4_inode *inode);
 
+/**@brief Copy an i-node as stored: the i-node size of the filesystem,
+ *        at most sizeof(struct ext4_inode); the fields a smaller i-node
+ *        does not have (128 byte i-nodes) are zeroed. Copying the whole
+ *        struct reads past such an i-node (fork issue #179).
+ * @param sb  Superblock
+ * @param dst Copy
+ * @param src I-node, e.g. in its i-node table block */
+void ext4_inode_copy(struct ext4_sblock *sb, struct ext4_inode *dst,
+		     const struct ext4_inode *src);
+
 /**@brief Set mode of the i-node.
  * @param sb    Superblock
  * @param inode I-node to set mode to
