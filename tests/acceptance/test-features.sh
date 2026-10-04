@@ -60,10 +60,10 @@ chmod /d/small 640
 chown /d/small 100000 70000
 atime /d/small 1111111111
 mtime /d/small 1234567890
-ctime /d/small 1300000000
 setxattr /d/small user.test hello
 setxattr /d/small user.other world
 removexattr /d/small user.other
+ctime /d/small 1300000000
 mkdir /many
 EOF
 	# Enough entries for several directory blocks even with 64 KiB blocks
