@@ -17,12 +17,11 @@
 #include <stdio.h>
 #include <time.h>
 
+/* Processor time of standard C (clock_gettime is not on Windows): both
+ * listings are measured the same way, only their ratio counts */
 static double now(void)
 {
-	struct timespec ts;
-
-	clock_gettime(CLOCK_MONOTONIC, &ts);
-	return ts.tv_sec + ts.tv_nsec / 1e9;
+	return (double)clock() / CLOCKS_PER_SEC;
 }
 
 /* Seconds to list a directory 20 times; its entries in *n */
