@@ -532,9 +532,11 @@ static int __ext4_journal_stop(const char *mount_point)
 	if (!mp)
 		return ENOENT;
 
-	/* Read only, unless the journal failed during this session
-	 * (jbd_journal::error), which makes the filesystem read only */
-	if (mp->fs.read_only && !mp->fs.jbd_journal)
+	/* No journal session: read only, ext4_journal_start() failed or was
+	 * not called, or the session was stopped already. (A journal that
+	 * failed during the session, jbd_journal::error, makes the filesystem
+	 * read only, but its session still has to end here.) */
+	if (!mp->fs.jbd_journal)
 		return EOK;
 
 	if (ext4_sb_feature_com(&mp->fs.sb,
@@ -3065,6 +3067,11 @@ int ext4_listxattr(const char *path, char *list, size_t size, size_t *ret_size)
 			const char *prefix =
 				ext4_get_xattr_name_prefix(entry->name_index,
 							   &prefix_len);
+			/* An unknown name index (damaged, or from a newer
+			 * kernel) has no namespace: no xattr call could use
+			 * the name, so it is not listed, as in Linux. */
+			if (!prefix)
+				continue;
 			if (size) {
 				if (prefix_len + entry->name_len + 1 > size) {
 					ext4_fs_put_inode_ref(&inode_ref);
