@@ -628,8 +628,8 @@ static bool ext4_fs_verify_bg_csum(struct ext4_sblock *sb,
 #endif
 
 /**@brief Whether the bitmaps and the inode table of a block group
- *        descriptor lie inside the filesystem, after the block holding the
- *        superblock. A damaged descriptor (e.g. all zeros) would otherwise
+ *        descriptor lie inside the filesystem, after the superblock and the
+ *        group descriptors. A damaged descriptor (e.g. all zeros) would otherwise
  *        make lwext4 read the inode table from, and initialise bitmaps
  *        over, block 0 or the superblock.
  * @param sb superblock
@@ -655,14 +655,19 @@ static bool ext4_fs_bg_locations_valid(struct ext4_sblock *sb,
 			table_blocks++;
 	}
 
+	/* Not on the group descriptors after the superblock either (Linux:
+	 * ext4_check_descriptors), which initialising an uninitialised
+	 * bitmap there would wipe */
+	uint64_t gdt_end = first + ext4_bg_num_gdb(sb, 0);
+
 	b = ext4_bg_get_block_bitmap(bg, sb);
-	if (b <= first || b >= blocks)
+	if (b <= gdt_end || b >= blocks)
 		return false;
 	b = ext4_bg_get_inode_bitmap(bg, sb);
-	if (b <= first || b >= blocks)
+	if (b <= gdt_end || b >= blocks)
 		return false;
 	b = ext4_bg_get_inode_table_first_block(bg, sb);
-	if (b <= first || b >= blocks || table_blocks > blocks - b)
+	if (b <= gdt_end || b >= blocks || table_blocks > blocks - b)
 		return false;
 	return true;
 }
