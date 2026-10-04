@@ -108,6 +108,31 @@ jobs:
       - if: always()
         run: cat build-ci/embedded-budget/summary.md >> "$GITHUB_STEP_SUMMARY" || true
 
+  # What each operation costs on emulated Cortex-M boards (tests/bench,
+  # fork issue #165): instructions, block I/O, heap, stack and code size.
+  # Fails if a figure grew by more than 5 % over the dataset in
+  # docs/performance/data, or if the pages made from it are not current;
+  # a deliberate increase is a new dataset: ci/run.sh bench update.
+  bench:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - run: ci/run.sh bench
+      - if: always()
+        run: |
+          if ls build-ci/bench/*.txt >/dev/null 2>&1; then
+            python3 tests/bench/table.py table build-ci/bench/*.txt >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: bench
+          path: build-ci/bench/*.txt
+          if-no-files-found: ignore
+
   # The libFuzzer targets of tests/fuzz (clang, ASan, UBSan, leak checks),
   # run once over the reproducible seed corpus and every crash input ever
   # found. Deterministic: it fails only if a known input crashes or leaks.

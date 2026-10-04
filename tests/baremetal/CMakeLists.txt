@@ -90,6 +90,33 @@ set_target_properties(baremetal_test.elf PROPERTIES LINK_FLAGS
     "${link_flags} -Wl,-Map=baremetal_test.map")
 
 add_test(NAME baremetal COMMAND ${runner} $<TARGET_FILE:baremetal_test.elf>)
+
+# The benchmark (tests/bench, fork issue #165) on the MPS2 boards: QEMU
+# counts instructions exactly with -icount shift=0.
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "^cortex-m")
+    set(bench_dir ${PROJECT_SOURCE_DIR}/tests/bench)
+    add_executable(bench.elf startup.c ${bench_dir}/bench.c
+                   ${bench_dir}/bench_heap.c ${bench_dir}/platform_mps2.c)
+    target_include_directories(bench.elf PRIVATE ${bench_dir})
+    # Named after the toolchain file: toolchain/cortex-m7.cmake sets
+    # CMAKE_SYSTEM_PROCESSOR cortex-m4, to build with the M4 configuration
+    get_filename_component(bench_platform "${CMAKE_TOOLCHAIN_FILE}" NAME)
+    string(REGEX REPLACE "\\.cmake$" "" bench_platform "${bench_platform}")
+    target_compile_definitions(bench.elf PRIVATE
+        BENCH_PLATFORM="${bench_platform}")
+    target_link_libraries(bench.elf lwext4)
+    set_target_properties(bench.elf PROPERTIES LINK_FLAGS
+        "${link_flags} -Wl,-Map=bench.map -Wl,--wrap=malloc -Wl,--wrap=free -Wl,--wrap=calloc -Wl,--wrap=realloc")
+    add_test(NAME bench COMMAND ${LWEXT4_QEMU_SYSTEM_ARM}
+             -M ${LWEXT4_QEMU_MACHINE} -icount shift=0,align=off,sleep=off
+             -nographic -monitor none -serial none
+             -semihosting-config enable=on,target=native
+             -kernel $<TARGET_FILE:bench.elf>)
+    set_tests_properties(bench PROPERTIES
+        TIMEOUT 900
+        PASS_REGULAR_EXPRESSION "PASS"
+        FAIL_REGULAR_EXPRESSION "FAIL")
+endif()
 # simavr cannot report an exit status: the verdict is the PASS/FAIL line.
 set_tests_properties(baremetal PROPERTIES
     TIMEOUT 900
