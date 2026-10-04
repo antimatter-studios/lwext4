@@ -523,6 +523,12 @@ static int ext4_fs_init_inode_table(struct ext4_block_group_ref *bg_ref)
 	return EOK;
 }
 
+/**@brief The block holding the superblock (at byte 1024).*/
+static uint32_t ext4_fs_super_block_no(struct ext4_sblock *s)
+{
+	return EXT4_SUPERBLOCK_OFFSET / ext4_sb_get_block_size(s);
+}
+
 static ext4_fsblk_t ext4_fs_get_descriptor_block(struct ext4_sblock *s,
 					     uint32_t bgid,
 					     uint32_t dsc_per_block)
@@ -534,13 +540,20 @@ static ext4_fsblk_t ext4_fs_get_descriptor_block(struct ext4_sblock *s,
 
 	bool meta_bg = ext4_sb_feature_incom(s, EXT4_FINCOM_META_BG);
 
+	/* The descriptors follow the block holding the superblock: block 1
+	 * with 1 KiB blocks, else block 0. That is first_data_block, except
+	 * with bigalloc and 1 KiB blocks, where first_data_block is 0 (Linux:
+	 * descriptor_loc) */
 	if (!meta_bg || dsc_id < first_meta_bg)
-		return ext4_get32(s, first_data_block) + dsc_id + 1;
+		return ext4_fs_super_block_no(s) + dsc_id + 1;
 
 	/* The descriptor block of a meta group is in its first group. */
 	bgid = dsc_id * dsc_per_block;
 	if (ext4_sb_is_super_in_bg(s, bgid))
 		has_super = 1;
+	if (bgid == 0 && ext4_fs_super_block_no(s) >
+			 ext4_get32(s, first_data_block))
+		has_super++;
 
 	return (has_super + ext4_fs_first_bg_block_no(s, bgid));
 }
@@ -638,7 +651,6 @@ static bool ext4_fs_verify_bg_csum(struct ext4_sblock *sb,
 static bool ext4_fs_bg_locations_valid(struct ext4_sblock *sb,
 				       struct ext4_bgroup *bg)
 {
-	uint64_t first = ext4_get32(sb, first_data_block);
 	uint64_t blocks = ext4_sb_get_blocks_cnt(sb);
 	uint32_t block_size = ext4_sb_get_block_size(sb);
 	uint32_t inode_size = ext4_get16(sb, inode_size);
@@ -658,7 +670,7 @@ static bool ext4_fs_bg_locations_valid(struct ext4_sblock *sb,
 	/* Not on the group descriptors after the superblock either (Linux:
 	 * ext4_check_descriptors), which initialising an uninitialised
 	 * bitmap there would wipe */
-	uint64_t gdt_end = first + ext4_bg_num_gdb(sb, 0);
+	uint64_t gdt_end = ext4_fs_super_block_no(sb) + ext4_bg_num_gdb(sb, 0);
 
 	b = ext4_bg_get_block_bitmap(bg, sb);
 	if (b <= gdt_end || b >= blocks)
