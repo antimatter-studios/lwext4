@@ -221,38 +221,94 @@ a workload leaks or needs more than the ceilings in
 
 Supported ext2/3/4 features
 =====
-incompatible:
-------------
-*  filetype, recover, meta_bg, extents, 64bit, flex_bg, metadata_csum_seed, largedir, inline_data: **yes**
-*  compression, journal_dev, mmp, ea_inode, dirdata: **no**
 
-A filesystem with an unsupported incompatible feature is not mounted
-(`ENOTSUP`). The exception is mmp, which is ignored: such a filesystem is
-mounted without multi-mount protection.
+<!-- features: begin (checked by tests/test_features.c) -->
+Every row below is a claim that CI proves on every pull request:
+[`tests/test_features.sh`](tests/test_features.sh) reads these tables,
+makes a filesystem for each row with e2fsprogs (`mke2fs`, or `debugfs` to
+set a flag `mke2fs` will not), and
+[`tests/test_features.c`](tests/test_features.c) checks what lwext4 does
+with it:
 
-With inline_data, lwext4 reads inline files and directories, and moves
-one to a block before it changes it (as Linux does when inline data no
-longer fits); files it creates are not inline. Writing needs the xattr
-code: a build without it (`CONFIG_XATTR_ENABLE=0`) mounts such
-filesystems read-only.
+- **read-write**: it mounts read-write; creating, writing, renaming,
+  linking, truncating and deleting files and directories (with xattrs and
+  a 300 entry directory) through the journal leaves a filesystem that
+  `e2fsck -fn` finds clean, and everything reads back after a remount.
+- **read-only**: it mounts, reads, refuses writes with `EROFS`, and leaves
+  the image unchanged.
+- **refused**: mounting fails with `ENOTSUP`.
 
-compatible:
-------------
-*  has_journal, ext_attr, dir_index: **yes**
-*  dir_prealloc, imagic_inodes, resize_inode: **no**
+| Filesystem (mke2fs defaults) | Block size | lwext4 |
+|---|---|---|
+| `ext2` | 1 KiB | **read-write** |
+| `ext2` | 4 KiB | **read-write** |
+| `ext3` | 1 KiB | **read-write** |
+| `ext3` | 4 KiB | **read-write** |
+| `ext4` | 1 KiB | **read-write** |
+| `ext4` | 2 KiB | **read-write** |
+| `ext4` | 4 KiB | **read-write** |
+| `ext4` | 64 KiB | **read-write** |
 
-read-only:
-------------
-*  sparse_super, large_file, huge_file, gdt_csum, dir_nlink, extra_isize, metadata_csum: **yes**
-*  quota, bigalloc, btree_dir: **no**
+The defaults of e2fsprogs 1.47 include metadata_csum_seed and orphan_file.
 
-A filesystem with an unsupported read-only feature is mounted read-only.
+Features, each added to (or, for `meta_bg`, replacing `resize_inode` in)
+an ext4 with 1 KiB blocks:
 
-Images made with the defaults of e2fsprogs 1.47 and later
-(metadata_csum_seed, orphan_file) are supported. Orphan inodes (files
-deleted while still open, or a truncate in progress, when Linux stopped)
-are released when a filesystem is mounted read-write, as Linux does; with
-orphan_file, a filesystem that has orphans pending is mounted read-only.
+| Feature | Kind | lwext4 | Notes |
+|---|---|---|---|
+| `has_journal` | compatible | **read-write** | replayed by `ext4_recover`, written between `ext4_journal_start` and `ext4_journal_stop` |
+| `ext_attr` | compatible | **read-write** | in-inode and block xattrs, POSIX ACLs kept as xattrs |
+| `dir_index` | compatible | **read-write** | htree directories, read and written |
+| `resize_inode` | compatible | **read-write** | the reserved descriptor blocks are kept; lwext4 does not resize |
+| `sparse_super2` | compatible | **read-write** | |
+| `fast_commit` | compatible | **read-write** | lwext4 writes full commits only |
+| `stable_inodes` | compatible | **read-write** | lwext4 never renumbers i-nodes |
+| `orphan_file` | compatible | **read-write** | see orphan_present |
+| `dir_prealloc` | compatible | **read-write** | ignored, as by Linux |
+| `imagic_inodes` | compatible | **read-write** | ignored, as by Linux |
+| `sparse_super` | read-only compatible | **read-write** | |
+| `large_file` | read-only compatible | **read-write** | |
+| `huge_file` | read-only compatible | **read-write** | |
+| `uninit_bg` | read-only compatible | **read-write** | group descriptor checksums (gdt_csum), uninitialised groups |
+| `dir_nlink` | read-only compatible | **read-write** | |
+| `extra_isize` | read-only compatible | **read-write** | |
+| `metadata_csum` | read-only compatible | **read-write** | every checksum verified and written |
+| `quota` | read-only compatible | **read-only** | |
+| `bigalloc` | read-only compatible | **read-only** | also with 1 KiB blocks, whose descriptors follow the superblock in block 1 (fork issue #171) |
+| `project` | read-only compatible | **read-only** | |
+| `verity` | read-only compatible | **read-only** | |
+| `replica` | read-only compatible | **read-only** | |
+| `read-only` | read-only compatible | **read-only** | |
+| `shared_blocks` | read-only compatible | **read-only** | |
+| `orphan_present` | read-only compatible | **read-only** | orphans pending in the orphan file; without it, orphans of the old list are released at a read-write mount, as Linux does |
+| `filetype` | incompatible | **read-write** | |
+| `extent` | incompatible | **read-write** | |
+| `flex_bg` | incompatible | **read-write** | |
+| `64bit` | incompatible | **read-write** | |
+| `meta_bg` | incompatible | **read-write** | |
+| `metadata_csum_seed` | incompatible | **read-write** | |
+| `large_dir` | incompatible | **read-write** | three level htrees, directories over 2 GiB |
+| `inline_data` | incompatible | **read-write** | inline files and directories are read, and moved to a block before they change (as Linux does when they no longer fit); files lwext4 creates are not inline. Writing needs the xattr code: without it (`CONFIG_XATTR_ENABLE=0`) such a filesystem is mounted read-only |
+| `needs_recovery` | incompatible | **read-write** | after `ext4_recover` replays the journal |
+| `mmp` | incompatible | **read-write** | multi-mount protection is not implemented: mounted without it |
+| `compression` | incompatible | **refused** | |
+| `journal_dev` | incompatible | **refused** | an external journal device, not a filesystem |
+| `ea_inode` | incompatible | **refused** | |
+| `dirdata` | incompatible | **refused** | |
+| `encrypt` | incompatible | **refused** | |
+| `casefold` | incompatible | **refused** | |
+<!-- features: end -->
+
+Not listed: `lazy_bg`, an obsolete flag that e2fsck itself refuses, so
+nothing can show that a filesystem with it is right; lwext4 ignores it,
+as Linux does.
+
+A feature lwext4 does not know is treated by its kind: a compatible one is
+ignored, a read-only compatible one makes the mount read-only, an
+incompatible one refuses it. The feature level of the build
+(`CONFIG_EXT_FEATURE_SET_LVL`, see [the configuration](include/ext4_config.h))
+narrows the list (an ext2 build has no journal, extents or checksums);
+the tables are checked with the default, ext4.
 
 Project tree
 =====
