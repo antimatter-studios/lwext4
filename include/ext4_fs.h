@@ -237,6 +237,14 @@ int ext4_fs_indirect_find_goal(struct ext4_inode_ref *inode_ref,
  *                          is damage and the result is EIO.
  * @return Error code
  */
+/**@brief End of the data of a block mapped (not extent) i-node: the block
+ *        after its highest mapped one (0 if none), found through the
+ *        highest non-zero pointers (at most three block reads).
+ * @param inode_ref I-node using a block map
+ * @param end       that block
+ * @return Error code*/
+int ext4_fs_bmap_mapped_end(struct ext4_inode_ref *inode_ref, uint64_t *end);
+
 /**@brief End of the hole of a block mapped (not extent) i-node at iblock:
  *        the first block a zero pointer of the block map does not cover.
  * @param inode_ref I-node using a block map
