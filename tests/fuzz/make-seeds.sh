@@ -80,6 +80,8 @@ image ext4-journal-1k.img 2304K -t ext4 -b 1024 -I 256 -O metadata_csum,^metadat
 image ext4-2k.img 256K -t ext4 -b 2048 -I 128 -O ^has_journal,^metadata_csum_seed,^orphan_file
 # The default of e2fsprogs 1.47: checksums from the seed in the superblock
 image ext4-csum-seed-1k.img 256K -t ext4 -b 1024 -I 256 -O ^has_journal,metadata_csum,metadata_csum_seed,^orphan_file
+# Small files, symlinks and directories inline in the i-node
+image ext4-inline-1k.img 256K -t ext4 -b 1024 -I 256 -O ^has_journal,inline_data,^metadata_csum_seed,^orphan_file
 
 # Orphan list as Linux leaves it after a crash (released at a read-write
 # mount): a deleted file, then a file whose truncate was interrupted.
