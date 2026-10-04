@@ -14,4 +14,5 @@ on every pull request, so the bug stays fixed. They are gzipped (`gzip -9
 | `146-journal-hole.gz` | fuzz_rw | #146: a hole in the journal inode was used as block 0 |
 | `147-dir-holes-slow.gz` | fuzz_mount | #147: listing a directory with a huge hole took seconds (a timeout) |
 | `147-dir-lookup-holes-slow.gz` | fuzz_rw | #147: looking a name up in such a directory, likewise |
+| `150-dir-rm-cycle.gz` | fuzz_rw | #150: ext4_dir_rm descended a damaged tree with a cycle forever (a timeout) |
 | `mount-before-2026-10-04-ce41bd70.gz` | fuzz_mount | found on 2026-10-01 by the harness before it was in the repository; fixed on main by 2026-10-04 (not bisected) |
