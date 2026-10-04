@@ -1,0 +1,11 @@
+BENCH cortex-m7 mkfs 3839520 insns reads 11 writes 216 heap 8896 stack 824
+BENCH cortex-m7 mount 11920 insns reads 5 writes 3 heap 3448 stack 484
+BENCH cortex-m7 create 35840 insns reads 5 writes 12 heap 9336 stack 820
+BENCH cortex-m7 write-4k 66440 insns reads 3 writes 23 heap 9336 stack 876
+BENCH cortex-m7 write-1m 8038360 insns reads 10 writes 2828 heap 9336 stack 876
+BENCH cortex-m7 read-1m 1407360 insns reads 260 writes 0 heap 8896 stack 664
+BENCH cortex-m7 lookup-x100 1911160 insns reads 694 writes 0 heap 8992 stack 852
+BENCH cortex-m7 truncate-1m 73120 insns reads 7 writes 10 heap 9240 stack 820
+BENCH cortex-m7 unlink 67920 insns reads 19 writes 14 heap 9432 stack 852
+BENCH cortex-m7 umount 5040 insns reads 0 writes 3 heap 7784 stack 288
+SIZE cortex-m7 text 80581 data 0 bss 5045
