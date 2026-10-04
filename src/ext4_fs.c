@@ -1410,8 +1410,10 @@ int ext4_fs_truncate_inode(struct ext4_inode_ref *inode_ref, uint64_t new_size)
 	if ((ext4_sb_feature_incom(sb, EXT4_FINCOM_EXTENTS)) &&
 	    (ext4_inode_has_flag(inode_ref->inode, EXT4_INODE_FLAG_EXTENTS))) {
 
-		/* Extents require special operation */
-		if (diff_blocks_cnt) {
+		/* Extents require special operation (counted in 64 bits: a
+		 * size beyond 2^32 blocks must not wrap to "nothing") */
+		if ((new_size + block_size - 1) / block_size <
+		    (old_size + block_size - 1) / block_size) {
 			r = ext4_extent_remove_space(inode_ref, new_blocks_cnt,
 						     EXT_MAX_BLOCKS);
 			if (r != EOK)
