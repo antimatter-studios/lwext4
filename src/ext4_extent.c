@@ -664,9 +664,9 @@ static uint32_t ext4_ext_block_csum(struct ext4_inode_ref *inode_ref,
 		uint32_t ino_index = to_le32(inode_ref->index);
 		uint32_t ino_gen =
 		    to_le32(ext4_inode_get_generation(inode_ref->inode));
-		/* First calculate crc32 checksum against fs uuid */
+		/* Start from the metadata checksum seed */
 		checksum =
-		    ext4_crc32c(EXT4_CRC32_INIT, sb->uuid, sizeof(sb->uuid));
+		    ext4_sb_csum_seed(sb);
 		/* Then calculate crc32 checksum against inode number
 		 * and inode generation */
 		checksum = ext4_crc32c(checksum, &ino_index, sizeof(ino_index));

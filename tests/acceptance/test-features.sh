@@ -544,25 +544,19 @@ unsupported_incompat journal_dev -O journal_dev
 unsupported_ro quota -t ext4 -O quota
 unsupported_ro bigalloc -t ext4 -O bigalloc -C 16384
 
-# README: e2fsprogs >= 1.47 enables metadata_csum_seed and orphan_file by
-# default; images for lwext4 have to be created without them.
+# README: images made with the defaults of e2fsprogs >= 1.47
+# (metadata_csum_seed, orphan_file) are supported. Older e2fsprogs do not
+# enable them by default: ask for metadata_csum_seed where it is known.
 step "e2fsprogs defaults (README note)"
 img="$WORK/defaults.img"
-mke2fs -q -F -t ext4 "$img" 64M
+mke2fs -q -F -t ext4 -O metadata_csum,metadata_csum_seed "$img" 64M 2>/dev/null ||
+	mke2fs -q -F -t ext4 "$img" 64M
 log "mke2fs -t ext4 defaults: $(features "$img")"
-if has_feature "$img" metadata_csum_seed; then
-	acc "$img" <<EOF
-fail ENOTSUP mount
-EOF
-	pass "metadata_csum_seed (e2fsprogs default) is refused as README.md says"
-fi
-img="$WORK/readme-mke2fs.img"
-mke2fs -q -F -t ext4 -O ^metadata_csum_seed,^orphan_file "$img" 64M
 acc "$img" <<EOF
 mount
 write /f 1000 1
 umount
 EOF
-fsck_clean "$img" "image made with README.md's mke2fs options"
+fsck_clean "$img" "image made with e2fsprogs' defaults (README.md)"
 
 finish

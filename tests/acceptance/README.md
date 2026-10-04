@@ -103,7 +103,7 @@ been corrected; **n/a** = cannot be verified in CI, reason given.
 | Supported features, read-only **yes** (sparse_super, large_file, huge_file, gdt_csum, dir_nlink, extra_isize, metadata_csum) | test-features.sh: 5 GiB sparse files read and appended beyond 4 GiB; uninit_bg; 65010 subdirectories (link count 1); 128 and 256 byte inodes | pass |
 | unsupported incompatible features | test-features.sh: inline_data, large_dir, ea_inode, journal_dev refused with ENOTSUP, image untouched; mmp is ignored and e2fsck stays clean | doc (mmp behaviour documented) |
 | unsupported read-only features | test-features.sh: quota, bigalloc mounted read-only, writes refused, image untouched (bigalloc: reading fails with an error, never wrong data) | doc |
-| e2fsprogs ≥ 1.47 defaults | test-features.sh: metadata_csum_seed refused, images made with the documented options work | doc (new note) |
+| e2fsprogs ≥ 1.47 defaults (metadata_csum_seed, orphan_file) supported | test-features.sh: image made with the defaults (metadata_csum_seed asked for explicitly), written by lwext4, e2fsck clean | fixed (#127: metadata_csum_seed was refused) |
 | GPLv2 files: ext4_xattr.c, ext4_extent.c; everything else BSD-3-Clause | test-build.sh compares the list with the license headers | doc (README said ext4_extents.c) |
 | "To use library as a BSD3, GPLv2 licensed source files must be removed first" | test-build.sh: library builds and links without the two files (extents and xattr disabled) | fixed, fix/xattr-disabled-build (CONFIG_XATTR_ENABLE=0 left undefined references) |
 | Project tree | test-docs.sh: every entry exists | doc (ext_images.7z removed) |
