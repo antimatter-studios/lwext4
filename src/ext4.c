@@ -182,6 +182,16 @@ static int ext4_has_children(bool *has_children, struct ext4_inode_ref *enode)
 		return EOK;
 	}
 
+	if (ext4_inline_has_data(sb, enode->inode)) {
+		struct ext4_inline_dirent de;
+		uint64_t pos = 2; /* after "." and ".." */
+		int r = ext4_inline_dir_next(sb, enode->index, enode->inode,
+					     &pos, &de);
+
+		*has_children = r == EOK;
+		return r == ENOENT ? EOK : r;
+	}
+
 	struct ext4_dir_iter it;
 	int rc = ext4_dir_iterator_init(&it, enode, 0);
 	if (rc != EOK)
@@ -275,6 +285,13 @@ static int ext4_link(struct ext4_mountpoint *mp, struct ext4_inode_ref *parent,
 	 */
 	if (is_dir) {
 		bool idx;
+#if CONFIG_XATTR_ENABLE
+		/* An inline directory keeps its parent in i_block: move it to
+		 * a block, where ".." is an entry */
+		r = ext4_inline_convert(ch);
+		if (r != EOK)
+			return r;
+#endif
 		idx = ext4_inode_has_flag(ch->inode, EXT4_INODE_FLAG_INDEX);
 		struct ext4_dir_search_result res;
 		if (!idx) {
@@ -1759,6 +1776,12 @@ static int ext4_ftruncate_no_lock(ext4_file *file, uint64_t size)
 		goto Finish;
 	}
 	if (file->fsize < size) {
+#if CONFIG_XATTR_ENABLE
+		/* Inline data moves to a block before the file grows */
+		r = ext4_inline_convert(&ref);
+		if (r != EOK)
+			goto Finish;
+#endif
 		r = ext4_grow_no_lock(file, &ref, size);
 		goto Finish;
 	}
@@ -1773,8 +1796,10 @@ static int ext4_ftruncate_no_lock(ext4_file *file, uint64_t size)
 		file->fsize = size;
 		if (file->fpos > size)
 			file->fpos = size;
-		/* What was after the new end must not come back */
-		r = ext4_zero_tail(&ref, size);
+		/* What was after the new end must not come back (inline
+		 * data was cut by the truncation itself) */
+		if (!ext4_inline_has_data(&file->mp->fs.sb, ref.inode))
+			r = ext4_zero_tail(&ref, size);
 	}
 
 	/*Stop write back cache mode, also when the truncation failed*/
@@ -2083,6 +2108,17 @@ int ext4_fwrite(ext4_file *file, const void *buf, size_t size, size_t *wcnt)
 		EXT4_MP_UNLOCK(file->mp);
 		return r;
 	}
+
+#if CONFIG_XATTR_ENABLE
+	/* Inline data moves to a block before it is written */
+	r = ext4_inline_convert(&ref);
+	if (r != EOK) {
+		ext4_fs_put_inode_ref(&ref);
+		ext4_trans_abort(file->mp);
+		EXT4_MP_UNLOCK(file->mp);
+		return r;
+	}
+#endif
 
 	/*Sync file size*/
 	file->fsize = ext4_inode_get_size(sb, ref.inode);
@@ -3251,6 +3287,15 @@ int ext4_dir_rm(const char *path)
 			if (r != EOK) {
 				break;
 			}
+
+#if CONFIG_XATTR_ENABLE
+			/* Its entries are removed one by one: from a block */
+			r = ext4_inline_convert(&act);
+			if (r != EOK) {
+				ext4_fs_put_inode_ref(&act);
+				break;
+			}
+#endif
 
 			/*Initialize iterator.*/
 			r = ext4_dir_iterator_init(&it, &act, act_curr_pos);

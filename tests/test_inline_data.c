@@ -3,14 +3,12 @@
 /*
  * inline_data (fork issue #130). lwext4 refused such filesystems with
  * ENOTSUP. It now reads them: files, symlinks and directories whose data
- * is in the i-node (i_block, continued in the system.data xattr). Writing
- * inline data is not supported yet, so the filesystem is mounted
- * read-only (as with an unsupported read-only feature).
+ * is in the i-node (i_block, continued in the system.data xattr).
+ * (test_inline_data_write writes them.)
  *
  * Read back every file of the image made in the .sh, list its inline
- * directories (also entries in system.data), look names up through them,
- * check that writes are refused; the .check.sh compares the image with
- * its copy.
+ * directories (also entries in system.data), look names up through them;
+ * the .check.sh compares the image with its copy.
  */
 
 #include "test_util.h"
@@ -81,8 +79,7 @@ int main(int argc, char **argv)
 	size_t i, n = 0;
 	ext4_file f;
 
-	/* Asked read-write, mounted read-only */
-	TEST_ASSERT_EQ(EOK, test_mount(image, false));
+	TEST_ASSERT_EQ(EOK, test_mount(image, true));
 
 	for (i = 0; i < sizeof(sizes) / sizeof(sizes[0]); i++) {
 		snprintf(path, sizeof(path), TEST_MP "f%u", (unsigned)sizes[i]);
@@ -104,10 +101,8 @@ int main(int argc, char **argv)
 	check_list(TEST_MP "medium/deeper", ". .. x ");
 	check_content(TEST_MP "medium/deeper/x", "deep\n");
 
-	/* Writes are refused */
+	/* A read-only mount refuses writes */
 	TEST_ASSERT_EQ(EROFS, ext4_fopen(&f, TEST_MP "small/new", "wb"));
-	TEST_ASSERT_EQ(EROFS, ext4_dir_mk(TEST_MP "small/d"));
-	TEST_ASSERT_EQ(EROFS, ext4_fremove(TEST_MP "small/e1"));
 	test_umount();
 	return 0;
 }

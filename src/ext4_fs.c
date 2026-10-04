@@ -46,6 +46,7 @@
 
 #include <ext4_trans.h>
 #include <ext4_fs.h>
+#include <ext4_inline.h>
 #include <ext4_blockdev.h>
 #include <ext4_super.h>
 #include <ext4_crc32.h>
@@ -234,10 +235,12 @@ int ext4_fs_check_features(struct ext4_fs *fs, bool *read_only)
 	/*Check features_incompatible*/
 	v = (ext4_get32(&fs->sb, features_incompatible) &
 	     (~CONFIG_SUPPORTED_FINCOM));
-	/* Inline data is read, not written yet (ext4_inline.c): such a
+	/* Inline data (ext4_inline.c) is written by moving it to a block
+	 * first, which needs the xattr code (system.data); without it such a
 	 * filesystem is mounted read-only, like one with an unsupported
 	 * read-only feature */
-	inline_ro = (v & EXT4_FINCOM_INLINE_DATA) != 0;
+	inline_ro = !CONFIG_XATTR_ENABLE &&
+		    (v & EXT4_FINCOM_INLINE_DATA) != 0;
 	v &= ~(uint32_t)EXT4_FINCOM_INLINE_DATA;
 	if (v) {
 		ext4_dbg(DEBUG_FS, DBG_ERROR
@@ -1369,6 +1372,12 @@ int ext4_fs_truncate_inode(struct ext4_inode_ref *inode_ref, uint64_t new_size)
 	/* It's not supported to make the larger file by truncate operation */
 	if (old_size < new_size)
 		return EINVAL;
+
+#if CONFIG_XATTR_ENABLE
+	/* Inline data: no blocks to release */
+	if (ext4_inline_has_data(sb, inode_ref->inode))
+		return ext4_inline_truncate(inode_ref, new_size);
+#endif
 
 	/* Fast symlink: the target is stored in i_block, no data blocks */
 	if (ext4_inode_is_fast_symlink(sb, inode_ref->inode)) {

@@ -79,6 +79,27 @@ int ext4_inline_dir_find(struct ext4_sblock *sb, struct ext4_inode *inode,
 			 const char *name, size_t name_len,
 			 struct ext4_dir_en **en);
 
+#if CONFIG_XATTR_ENABLE
+struct ext4_inode_ref;
+
+/**@brief Move the data of an inline i-node into a block before it changes:
+ *        a file's (or symlink's) data into block 0 (none for an empty
+ *        file), a directory's entries into a block 0 with "." and "..".
+ *        The inline flag and "system.data" go. Without inline data
+ *        nothing happens. If no block can be allocated, the i-node stays
+ *        as it was.
+ * @param inode_ref the i-node
+ * @return EOK, ENOSPC, EIO for damaged inline data*/
+int ext4_inline_convert(struct ext4_inode_ref *inode_ref);
+
+/**@brief Truncate an inline i-node to new_size, at most its size: the data
+ *        stays inline (Linux keeps it so), the bytes past the new size go.
+ * @param inode_ref the i-node
+ * @param new_size  the new size
+ * @return EOK, an error of setting "system.data"*/
+int ext4_inline_truncate(struct ext4_inode_ref *inode_ref, uint64_t new_size);
+#endif
+
 #ifdef __cplusplus
 }
 #endif

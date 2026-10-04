@@ -392,6 +392,13 @@ void ext4_dir_write_entry(struct ext4_sblock *sb, struct ext4_dir_en *en,
 int ext4_dir_add_entry(struct ext4_inode_ref *parent, const char *name,
 		       uint32_t name_len, struct ext4_inode_ref *child)
 {
+#if CONFIG_XATTR_ENABLE
+	/* An inline directory moves to a block first */
+	int rc = ext4_inline_convert(parent);
+	if (rc != EOK)
+		return rc;
+#endif
+
 	int r;
 	struct ext4_fs *fs = parent->fs;
 	struct ext4_sblock *sb = &parent->fs->sb;
@@ -598,6 +605,12 @@ int ext4_dir_find_entry(struct ext4_dir_search_result *result,
 int ext4_dir_remove_entry(struct ext4_inode_ref *parent, const char *name,
 			  uint32_t name_len)
 {
+#if CONFIG_XATTR_ENABLE
+	int rc0 = ext4_inline_convert(parent);
+	if (rc0 != EOK)
+		return rc0;
+#endif
+
 	struct ext4_sblock *sb = &parent->fs->sb;
 	/* Check if removing from directory */
 	if (!ext4_inode_is_type(sb, parent->inode, EXT4_INODE_MODE_DIRECTORY))

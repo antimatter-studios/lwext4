@@ -221,14 +221,18 @@ Supported ext2/3/4 features
 =====
 incompatible:
 ------------
-*  filetype, recover, meta_bg, extents, 64bit, flex_bg, metadata_csum_seed: **yes**
-*  inline_data: **read**, the filesystem is mounted read-only
+*  filetype, recover, meta_bg, extents, 64bit, flex_bg, metadata_csum_seed, inline_data: **yes**
 *  compression, journal_dev, mmp, ea_inode, dirdata, largedir: **no**
 
 A filesystem with an unsupported incompatible feature is not mounted
-(`ENOTSUP`). The exceptions are mmp, which is ignored (such a filesystem is
-mounted without multi-mount protection), and inline_data, which lwext4
-reads but does not write yet (such a filesystem is mounted read-only).
+(`ENOTSUP`). The exception is mmp, which is ignored: such a filesystem is
+mounted without multi-mount protection.
+
+With inline_data, lwext4 reads inline files and directories, and moves
+one to a block before it changes it (as Linux does when inline data no
+longer fits); files it creates are not inline. Writing needs the xattr
+code: a build without it (`CONFIG_XATTR_ENABLE=0`) mounts such
+filesystems read-only.
 
 compatible:
 ------------

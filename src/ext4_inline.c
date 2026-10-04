@@ -25,8 +25,12 @@
 #include <ext4_super.h>
 #include <ext4_inode.h>
 #include <ext4_dir.h>
+#include <ext4_fs.h>
+#include <ext4_trans.h>
+#include <ext4_xattr.h>
 #include <ext4_inline.h>
 
+#include <stdlib.h>
 #include <string.h>
 
 #define EXT4_INLINE_XATTR_MAGIC 0xEA020000
@@ -232,6 +236,186 @@ int ext4_inline_dir_find(struct ext4_sblock *sb, struct ext4_inode *inode,
 	*en = NULL;
 	return r;
 }
+
+#if CONFIG_XATTR_ENABLE
+/* An entry of len bytes, its record len (rec 0: as small as possible) */
+static struct ext4_dir_en *ext4_inline_put_entry(struct ext4_sblock *sb,
+						 uint8_t *at, uint32_t ino,
+						 uint8_t type, const char *name,
+						 uint16_t name_len, uint16_t rec)
+{
+	struct ext4_dir_en *en = (struct ext4_dir_en *)at;
+
+	if (!rec)
+		rec = (uint16_t)((sizeof(struct ext4_fake_dir_entry) + name_len +
+				  3) & ~3u);
+	ext4_dir_en_set_inode(en, ino);
+	ext4_dir_en_set_entry_len(en, rec);
+	ext4_dir_en_set_name_len(sb, en, name_len);
+	ext4_dir_en_set_inode_type(sb, en, type);
+	memcpy(en->name, name, name_len);
+	return en;
+}
+
+/* The block 0 of an inline directory: ".", "..", the entries, the last
+ * one up to the end of the block (or its checksum tail) */
+static int ext4_inline_dir_block(struct ext4_inode_ref *ref, uint8_t *blk)
+{
+	struct ext4_sblock *sb = &ref->fs->sb;
+	uint32_t bs = ext4_sb_get_block_size(sb);
+	uint32_t end = bs, off = 0;
+	struct ext4_dir_en *last;
+	struct ext4_inline_dirent de;
+	uint64_t pos = 0;
+	int r;
+
+	if (ext4_sb_feature_ro_com(sb, EXT4_FRO_COM_METADATA_CSUM))
+		end -= sizeof(struct ext4_dir_entry_tail);
+
+	while ((r = ext4_inline_dir_next(sb, ref->index, ref->inode, &pos,
+					 &de)) == EOK) {
+		uint32_t rec = (sizeof(struct ext4_fake_dir_entry) +
+				de.name_len + 3) & ~3u;
+
+		if (off + rec > end)
+			return EIO;
+		last = ext4_inline_put_entry(sb, blk + off, de.inode, de.type,
+					     de.name, de.name_len, 0);
+		off += rec;
+	}
+	if (r != ENOENT)
+		return r;
+
+	/* "." and ".." always come first: last is set */
+	ext4_dir_en_set_entry_len(last, (uint16_t)(end - ((uint8_t *)last -
+							   blk)));
+	if (end != bs)
+		ext4_dir_init_entry_tail(EXT4_DIRENT_TAIL(blk, bs));
+	return EOK;
+}
+
+int ext4_inline_convert(struct ext4_inode_ref *ref)
+{
+	struct ext4_fs *fs = ref->fs;
+	struct ext4_sblock *sb = &fs->sb;
+	uint32_t bs = ext4_sb_get_block_size(sb);
+	bool dir = ext4_inode_is_type(sb, ref->inode,
+				      EXT4_INODE_MODE_DIRECTORY);
+	uint64_t size = ext4_inode_get_size(sb, ref->inode);
+	uint8_t iblock[EXT4_INLINE_IBLOCK];
+	uint8_t *data, *xcopy = NULL;
+	const uint8_t *x;
+	uint32_t xlen;
+	ext4_fsblk_t fblk;
+	ext4_lblk_t iblk;
+	struct ext4_block b;
+	size_t n;
+	int r;
+
+	if (!ext4_inline_has_data(sb, ref->inode))
+		return EOK;
+	if (!dir && size > bs)
+		return EIO;
+
+	data = ext4_malloc(bs);
+	if (!data)
+		return ENOMEM;
+	memset(data, 0, bs);
+	if (dir)
+		r = ext4_inline_dir_block(ref, data);
+	else
+		r = ext4_inline_read(sb, ref->inode, 0, data, (size_t)size,
+				     &n);
+	if (r != EOK)
+		goto out;
+
+	/* What it takes to undo: i_block and system.data */
+	memcpy(iblock, ref->inode->blocks, sizeof(iblock));
+	x = ext4_inline_xattr(sb, ref->inode, &xlen);
+	if (x && xlen) {
+		xcopy = ext4_malloc(xlen);
+		if (!xcopy) {
+			r = ENOMEM;
+			goto out;
+		}
+		memcpy(xcopy, x, xlen);
+	}
+
+	r = ext4_xattr_remove(ref, EXT4_INLINE_XATTR_SYSTEM, "data", 4);
+	if (r != EOK && r != ENODATA)
+		goto out;
+	ext4_inode_clear_flag(ref->inode, EXT4_INODE_FLAG_INLINE_DATA);
+	memset(ref->inode->blocks, 0, sizeof(ref->inode->blocks));
+	ext4_inode_set_size(ref->inode, 0);
+	ext4_fs_inode_blocks_init(fs, ref);
+	ref->dirty = true;
+
+	r = EOK;
+	if (dir || size) {
+		/* Block 0; sets the size to a block */
+		r = ext4_fs_append_inode_dblk(ref, &fblk, &iblk);
+		if (r == EOK)
+			r = ext4_trans_block_get_noread(fs->bdev, &b, fblk);
+		if (r != EOK) {
+			/* Back to inline data, as it was */
+			memcpy(ref->inode->blocks, iblock, sizeof(iblock));
+			ext4_inode_set_flag(ref->inode,
+					    EXT4_INODE_FLAG_INLINE_DATA);
+			ext4_inode_clear_flag(ref->inode,
+					      EXT4_INODE_FLAG_EXTENTS);
+			ext4_inode_set_size(ref->inode, size);
+			ext4_xattr_set(ref, EXT4_INLINE_XATTR_SYSTEM, "data", 4,
+				       xcopy ? xcopy : (const void *)"", xlen);
+			goto out;
+		}
+		memcpy(b.data, data, bs);
+		if (dir)
+			ext4_dir_set_csum(ref, (struct ext4_dir_en *)b.data);
+		ext4_trans_set_block_dirty(b.buf);
+		r = ext4_block_set(fs->bdev, &b);
+		if (!dir)
+			ext4_inode_set_size(ref->inode, size);
+	}
+out:
+	if (xcopy)
+		ext4_free(xcopy);
+	ext4_free(data);
+	return r;
+}
+
+int ext4_inline_truncate(struct ext4_inode_ref *ref, uint64_t new_size)
+{
+	struct ext4_sblock *sb = &ref->fs->sb;
+	uint8_t *ib = (uint8_t *)ref->inode->blocks;
+	uint32_t xlen;
+	const uint8_t *x = ext4_inline_xattr(sb, ref->inode, &xlen);
+	int r = EOK;
+
+	if (new_size < EXT4_INLINE_IBLOCK)
+		memset(ib + new_size, 0, EXT4_INLINE_IBLOCK - (size_t)new_size);
+	/* system.data keeps the bytes after i_block up to the new size */
+	if (x && xlen > (new_size > EXT4_INLINE_IBLOCK ?
+			 new_size - EXT4_INLINE_IBLOCK : 0)) {
+		uint32_t keep = new_size > EXT4_INLINE_IBLOCK ?
+				(uint32_t)(new_size - EXT4_INLINE_IBLOCK) : 0;
+		uint8_t *copy = keep ? ext4_malloc(keep) : NULL;
+
+		if (keep && !copy)
+			return ENOMEM;
+		if (keep)
+			memcpy(copy, x, keep);
+		r = ext4_xattr_set(ref, EXT4_INLINE_XATTR_SYSTEM, "data", 4,
+				   copy ? copy : (const void *)"", keep);
+		if (copy)
+			ext4_free(copy);
+	}
+	if (r == EOK) {
+		ext4_inode_set_size(ref->inode, new_size);
+		ref->dirty = true;
+	}
+	return r;
+}
+#endif
 
 /**
  * @}

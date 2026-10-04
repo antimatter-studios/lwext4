@@ -357,7 +357,8 @@ static int ext4_xattr_set_entry(struct ext4_xattr_info *i,
 		size_t value_size =
 		    EXT4_XATTR_SIZE(to_le32(s->here->e_value_size));
 
-		if (value_offs) {
+		/* (an empty value has no data part, whatever its offset) */
+		if (value_offs && value_size) {
 			/* Remove the data part. */
 			memmove((char *)first_value + value_size, first_value,
 				(char *)value - (char *)first_value);
@@ -534,11 +535,11 @@ static bool ext4_xattr_is_block_valid(struct ext4_inode_ref *inode_ref,
 	 */
 	for (; !EXT4_XATTR_IS_LAST_ENTRY(entry);
 	     entry = EXT4_XATTR_NEXT(entry)) {
-		if (!to_le32(entry->e_value_size) &&
-		    to_le16(entry->e_value_offs))
-			return false;
-
-		if ((char *)base + to_le16(entry->e_value_offs) +
+		/* The offset of an empty value means nothing: lwext4 writes
+		 * 0, e2fsprogs the end of the area (Linux checks only
+		 * values that have bytes) */
+		if (to_le32(entry->e_value_size) &&
+		    (char *)base + to_le16(entry->e_value_offs) +
 			to_le32(entry->e_value_size) >
 		    (char *)end)
 			return false;
@@ -629,11 +630,11 @@ static bool ext4_xattr_is_ibody_valid(struct ext4_inode_ref *inode_ref)
 	 */
 	for (; !EXT4_XATTR_IS_LAST_ENTRY(entry);
 	     entry = EXT4_XATTR_NEXT(entry)) {
-		if (!to_le32(entry->e_value_size) &&
-		    to_le16(entry->e_value_offs))
-			return false;
-
-		if ((char *)base + to_le16(entry->e_value_offs) +
+		/* The offset of an empty value means nothing: lwext4 writes
+		 * 0, e2fsprogs the end of the area (Linux checks only
+		 * values that have bytes) */
+		if (to_le32(entry->e_value_size) &&
+		    (char *)base + to_le16(entry->e_value_offs) +
 			to_le32(entry->e_value_size) >
 		    (char *)end)
 			return false;
