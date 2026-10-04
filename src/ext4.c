@@ -1009,6 +1009,27 @@ static int ext4_write_back_end(struct ext4_mountpoint *mp,
 	return r != EOK ? r : rw;
 }
 
+/* Where the data of an i-node ends at the latest: after its last extent,
+ * or at what a block map can address. */
+static int ext4_trunc_data_end(struct ext4_inode_ref *ref, uint64_t *end)
+{
+	struct ext4_fs *fs = ref->fs;
+	uint64_t bs = ext4_sb_get_block_size(&fs->sb);
+
+#if CONFIG_EXTENT_ENABLE && CONFIG_EXTENTS_ENABLE
+	if (ext4_sb_feature_incom(&fs->sb, EXT4_FINCOM_EXTENTS) &&
+	    ext4_inode_has_flag(ref->inode, EXT4_INODE_FLAG_EXTENTS)) {
+		ext4_lblk_t blocks;
+		int r = ext4_extent_mapped_end(ref, &blocks);
+
+		*end = (uint64_t)blocks * bs;
+		return r;
+	}
+#endif
+	*end = (uint64_t)fs->inode_block_limits[3] * bs;
+	return EOK;
+}
+
 static int ext4_trunc_inode(struct ext4_mountpoint *mp,
 			    uint32_t index, uint64_t new_size)
 {
@@ -1022,7 +1043,27 @@ static int ext4_trunc_inode(struct ext4_mountpoint *mp,
 		return r;
 
 	inode_size = ext4_inode_get_size(&fs->sb, inode_ref.inode);
-	ext4_fs_put_inode_ref(&inode_ref);
+
+	/* Nothing is mapped above where the data ends: start the steps there.
+	 * A damaged size of up to 2^64 bytes would take forever in steps. */
+	if (inode_size > new_size &&
+	    !ext4_inline_has_data(&fs->sb, inode_ref.inode)) {
+		uint64_t end;
+
+		r = ext4_trunc_data_end(&inode_ref, &end);
+		if (r != EOK) {
+			ext4_fs_put_inode_ref(&inode_ref);
+			return r;
+		}
+		if (end < inode_size) {
+			inode_size = end > new_size ? end : new_size;
+			ext4_inode_set_size(inode_ref.inode, inode_size);
+			inode_ref.dirty = true;
+		}
+	}
+	r = ext4_fs_put_inode_ref(&inode_ref);
+	if (r != EOK)
+		return r;
 
 	/*
 	 * A truncate that fits into a single step stays in the caller's

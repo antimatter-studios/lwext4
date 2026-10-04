@@ -2089,6 +2089,27 @@ __unused static void print_path(struct ext4_extent_path *path)
 	}
 }
 
+int ext4_extent_mapped_end(struct ext4_inode_ref *inode_ref, ext4_lblk_t *end)
+{
+	struct ext4_extent_path *path = NULL;
+	struct ext4_extent *ex;
+	int err;
+
+	*end = 0;
+	/* The path to the last logical block ends at the rightmost extent */
+	err = ext4_find_extent(inode_ref, EXT_MAX_BLOCKS - 1, &path, 0);
+	if (err != EOK)
+		return err;
+
+	ex = path[path->depth].extent;
+	if (ex)
+		*end = to_le32(ex->first_block) + ext4_ext_get_actual_len(ex);
+
+	ext4_ext_drop_refs(inode_ref, path, 0);
+	ext4_free(path);
+	return EOK;
+}
+
 int ext4_extent_next_mapped(struct ext4_inode_ref *inode_ref,
 			    ext4_lblk_t iblock, ext4_lblk_t *next)
 {
