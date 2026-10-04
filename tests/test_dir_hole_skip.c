@@ -4,10 +4,12 @@
  * Directories with large holes (fork issue #147, found by fuzz_mount). The
  * directory iterator stepped through a hole one block at a time, an extent
  * lookup each: a directory whose (damaged) size claims gigabytes beyond its
- * one block took seconds, minutes on a microcontroller. With extents the
- * hole is skipped at once.
+ * one block took seconds, minutes on a microcontroller. Now a hole is
+ * skipped at once: with extents to the next extent, with a block map to the
+ * end of what the empty pointer would cover.
  *
- * /huge and /normal (see the .sh) have the same entries; /huge claims
+ * /huge and /normal (see the .sh; with extents and with block maps) have
+ * the same entries; /huge claims
  * 4 GiB - 1 KiB. Listing /huge, and looking a name up in it, must take
  * about as long as in /normal (compared, not timed: CI machines differ),
  * and the listing return the same entries.
@@ -55,9 +57,8 @@ static double lookup(const char *path)
 	return now() - t;
 }
 
-int main(int argc, char **argv)
+static void run(const char *image)
 {
-	const char *image = test_image_arg(argc, argv);
 	double normal, huge, find_normal, find_huge;
 	int n_normal, n_huge;
 
@@ -77,5 +78,15 @@ int main(int argc, char **argv)
 	 * noise on a slow machine. */
 	TEST_ASSERT(huge < normal * 50 + 0.05);
 	TEST_ASSERT(find_huge < find_normal * 50 + 0.05);
+}
+
+int main(int argc, char **argv)
+{
+	const char *image = test_image_arg(argc, argv);
+	char ext2[512];
+
+	snprintf(ext2, sizeof(ext2), "%s.ext2", image);
+	run(image); /* extents */
+	run(ext2);  /* block maps */
 	return 0;
 }

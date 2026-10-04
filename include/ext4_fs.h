@@ -236,6 +236,16 @@ int ext4_fs_indirect_find_goal(struct ext4_inode_ref *inode_ref,
  *                          is supported under the current context
  * @return Error code
  */
+/**@brief End of the hole of a block mapped (not extent) i-node at iblock:
+ *        the first block a zero pointer of the block map does not cover.
+ * @param inode_ref I-node using a block map
+ * @param iblock    logical block in a hole
+ * @param next      first block after the hole that can be mapped
+ *                  (iblock + 1 at least)
+ * @return Error code*/
+int ext4_fs_bmap_hole_end(struct ext4_inode_ref *inode_ref,
+			  ext4_lblk_t iblock, uint64_t *next);
+
 int ext4_fs_get_inode_dblk_idx(struct ext4_inode_ref *inode_ref,
 				 ext4_lblk_t iblock, ext4_fsblk_t *fblock,
 				 bool support_unwritten);

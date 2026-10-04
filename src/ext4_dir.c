@@ -225,9 +225,9 @@ static int ext4_dir_iterator_set(struct ext4_dir_iter *it,
 	return EOK;
 }
 
-/* The block of a directory to look at after the hole at iblock: the next
- * mapped one with extents (a damaged size may make a hole of millions of
- * blocks; the extent tree knows where it ends), else iblock + 1. */
+/* The block of a directory to look at after the hole at iblock (a damaged
+ * size may make a hole of millions of blocks): the next mapped one with
+ * extents, the end of what the zero pointer covers with a block map. */
 static int ext4_dir_skip_hole(struct ext4_inode_ref *ref, uint32_t iblock,
 			      uint64_t *next)
 {
@@ -244,11 +244,11 @@ static int ext4_dir_skip_hole(struct ext4_inode_ref *ref, uint32_t iblock,
 			return r;
 		if (mapped > iblock)
 			*next = mapped;
+		return EOK;
 	}
-#else
-	(void)ref;
 #endif
-	return EOK;
+	/* Block map: a zero pointer covers a whole range */
+	return ext4_fs_bmap_hole_end(ref, iblock, next);
 }
 
 /**@brief Seek to next valid directory entry.
@@ -305,7 +305,8 @@ static int ext4_dir_iterator_seek(struct ext4_dir_iter *it, uint64_t pos)
 					       &next);
 			if (r != EOK)
 				return r;
-			pos = next * block_size;
+			pos = next < size / block_size + 1 ? next * block_size
+							   : size;
 			continue;
 		}
 
