@@ -534,6 +534,12 @@ int ext4_mount(const char *dev_name, const char *mount_point,
 	if (!mp)
 		return ENOMEM;
 
+	/* Nothing of an earlier mount on this mount point carries over: its
+	 * journal session ended with it */
+	mp->fs.jbd_fs = NULL;
+	mp->fs.jbd_journal = NULL;
+	mp->fs.curr_trans = NULL;
+
 	r = ext4_block_init(bd);
 	if (r != EOK)
 		return r;
@@ -607,6 +613,17 @@ int ext4_umount(const char *mount_point)
 
 	if (!mp)
 		return ENODEV;
+
+	/* A journal session still open ends here, as with
+	 * ext4_journal_stop(): the application did not stop it, or stopping
+	 * it could not write the journalled blocks (the session stays open
+	 * then, to be stopped again). If they still cannot be written, it
+	 * ends without them: the journal stays marked for replay, which
+	 * writes them at the next mount (fork issue #167). */
+	if (ext4_journal_stop(mount_point) != EOK && mp->fs.jbd_journal) {
+		mp->jbd_journal.error = EIO;
+		(void)ext4_journal_stop(mount_point);
+	}
 
 	if (!mp->fs.read_only) {
 		/* The superblock write of ext4_fs_fini() saves it: the next
