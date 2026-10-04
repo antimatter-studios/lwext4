@@ -3393,6 +3393,19 @@ int ext4_dir_rm(const char *path)
 				}
 
 				if (has_children) {
+					/* A directory that holds itself or the
+					 * directory above, or a tree deeper
+					 * than there are i-nodes: a cycle of a
+					 * damaged tree, which would be
+					 * descended forever */
+					if (cinode == inode_current ||
+					    cinode == inode_up ||
+					    depth >= ext4_get32(&fs->sb,
+								inodes_count)) {
+						ext4_fs_put_inode_ref(&child);
+						r = EIO;
+						goto End;
+					}
 					/*Has directory children. Go into this
 					 * directory.*/
 					inode_up = inode_current;
