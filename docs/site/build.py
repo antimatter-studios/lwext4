@@ -13,6 +13,8 @@ from the code:
   testing/index.md    every regression test, from its leading comment
   testing/fuzzing.md  the fuzzers' README and every crash input kept
   ci/index.md         ci/README.md, the jobs and the workflows
+  downloads.md        the latest release's files, filled in by the
+                      reader's browser from the GitHub API (js/live.js)
 
 Links between documents that are on the site point to their pages; links to
 anything else in the repository point to it on GitHub, at the commit the
@@ -323,6 +325,28 @@ What GitHub Actions runs, each a call of `ci/run.sh`.
         site.copy(env)
 
 
+def downloads(site):
+    """The page of the latest release's files; docs/site/js/live.js fills
+    it in the reader's browser, so it is current without a rebuild."""
+    import shutil
+    js = os.path.join(site.docs, "js")
+    os.makedirs(js, exist_ok=True)
+    for path in glob.glob("docs/site/js/*.js"):
+        shutil.copy(path, js)
+    site.write("downloads.md", """# Downloads
+
+Every release has the library built for each platform CI tests, the
+example firmware, and the test results it was released with. This list is
+read from GitHub when you open the page, so it always shows the latest
+release; all releases are on [GitHub](%s%s/releases).
+
+<div data-live="downloads" data-base="../"></div>
+
+<noscript>The list needs JavaScript: see the
+<a href="%s%s/releases">releases on GitHub</a>.</noscript>
+""" % (GITHUB, REPO, GITHUB, REPO))
+
+
 def licence(site):
     site.write("licence.md", """# Licence
 
@@ -380,6 +404,8 @@ markdown_extensions:
       permalink: true
   - pymdownx.highlight
   - pymdownx.superfences
+extra_javascript:
+  - js/live.js
 validation:
   omitted_files: warn
   absolute_links: warn
@@ -447,9 +473,11 @@ def main(argv):
     tests(site)
     fuzzing(site)
     ci(site)
+    downloads(site)
     licence(site)
 
-    items = [("Home", "index.md"), ("Configuration", "configuration.md"),
+    items = [("Home", "index.md"), ("Downloads", "downloads.md"),
+             ("Configuration", "configuration.md"),
              ("API reference", "api/index.html")]
     items.append(("Examples", [("Overview", "examples/index.md")] + [
         (readme_title(p, p.split("/")[1]), site.pages[p]) for p in examples]))
