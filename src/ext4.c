@@ -426,10 +426,13 @@ static int ext4_link(struct ext4_mountpoint *mp, struct ext4_inode_ref *parent,
 	return r;
 }
 
+/* stamp_parent: false while ext4_dir_rm() empties a directory that it
+ * removes afterwards: stamping it for every entry would only write its
+ * i-node again and again. */
 static int ext4_unlink(struct ext4_mountpoint *mp,
 		       struct ext4_inode_ref *parent,
 		       struct ext4_inode_ref *child, const char *name,
-		       uint32_t name_len)
+		       uint32_t name_len, bool stamp_parent)
 {
 	bool has_children;
 	int rc = ext4_has_children(&has_children, child);
@@ -454,7 +457,8 @@ static int ext4_unlink(struct ext4_mountpoint *mp,
 		parent->dirty = true;
 	}
 
-	ext4_stamp(mp, parent, EXT4_INODE_MTIME | EXT4_INODE_CTIME);
+	if (stamp_parent)
+		ext4_stamp(mp, parent, EXT4_INODE_MTIME | EXT4_INODE_CTIME);
 	ext4_stamp(mp, child, EXT4_INODE_CTIME);
 	if (ext4_inode_get_links_cnt(child->inode)) {
 		ext4_fs_inode_links_count_dec(child);
@@ -1731,7 +1735,7 @@ int ext4_fremove(const char *path)
 	len = ext4_path_check(path, &is_goal);
 
 	/*Unlink from parent*/
-	r = ext4_unlink(mp, &parent, &child, path, len);
+	r = ext4_unlink(mp, &parent, &child, path, len, true);
 	if (r != EOK)
 		goto Finish;
 
@@ -3454,7 +3458,7 @@ int ext4_dir_rm(const char *path)
 				 * unlink.*/
 				r = ext4_unlink(f.mp, &act, &child,
 						(char *)it.curr->name,
-						it.curr->name_len);
+						it.curr->name_len, false);
 				if (r != EOK) {
 					ext4_fs_put_inode_ref(&child);
 					goto End;
@@ -3532,7 +3536,7 @@ End:
 		 * unlinked.
 		 * Last unlink from root of current directory*/
 		r = ext4_unlink(f.mp, &parent, &act,
-				(char *)path, len);
+				(char *)path, len, true);
 		if (r != EOK) {
 			ext4_fs_put_inode_ref(&parent);
 			ext4_fs_put_inode_ref(&act);
