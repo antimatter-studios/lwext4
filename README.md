@@ -8,6 +8,11 @@
 >   since 2022; the changes up to v1.0.1-am.3 are also open upstream pull
 >   requests. Every fix carries a regression test that CI proves fails
 >   without the fix and passes with it (`ci/run.sh red-green`).
+> - **Documentation:** the [project site](https://antimatter-studios.github.io/lwext4/)
+>   is generated from this repository on every merge to `main`: this
+>   README, the API reference, the build options, every regression test
+>   and fuzzer crash input with its issue, and the CI jobs
+>   (`ci/run.sh pages` builds it locally).
 > - **Releases** are tagged on `main` as `v<next upstream
 >   patch>-am.<n>`, e.g. `v1.0.1-am.4`: a valid SemVer pre-release that sorts
 >   after upstream `v1.0.0`, before a future upstream `v1.0.1`, and counts
