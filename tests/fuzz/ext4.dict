@@ -1,0 +1,16 @@
+# libFuzzer dictionary of ext4 (ci/run.sh fuzz run): magic numbers and
+# names, so mutations produce them whole
+sb_magic="\x53\xEF"
+extent_magic="\x0A\xF3"
+jbd_magic="\xC0\x3B\x39\x98"
+xattr_magic="\x00\x00\x02\xEA"
+dx_info="\x00\x00\x00\x00\x01\x08\x00\x00"
+gpt_sig="EFI PART"
+mbr_sig="\x55\xAA"
+dot="."
+dotdot=".."
+lost_found="lost+found"
+system_data="data"
+user="user."
+max_u32="\xFF\xFF\xFF\xFF"
+max_u16="\xFF\xFF"

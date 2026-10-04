@@ -22,4 +22,15 @@ on every pull request, so the bug stays fixed. They are gzipped (`gzip -9
 | `157-journal-block-size.gz` | fuzz_rw | #157: a journal block size of 64 KiB on a 1 KiB filesystem overflowed block buffers |
 | `160-bg-gdt-overlap.gz` | fuzz_mount | #160: a block bitmap on the group descriptors wiped them (assert on block 0; a read-only mount wrote them back) |
 | `162-truncate-inline-huge.gz` | fuzz_rw | #162: truncating an inline file with a damaged size of about 2^64 never ended (a timeout) |
+| `174-mkfs-tiny-journal.gz` | fuzz_mkfs | #174: ext4_mkfs made a 9 block journal, and a transaction bigger than the journal hit an assert |
+| `179-inode-128-copy.gz` | fuzz_mkfs | #179: with 128 byte i-nodes, copying the journal's i-node read past the cache buffer |
 | `mount-before-2026-10-04-ce41bd70.gz` | fuzz_mount | found on 2026-10-01 by the harness before it was in the repository; fixed on main by 2026-10-04 (not bisected) |
+
+Some crashes need the state an earlier input left behind and do not
+reproduce alone, so they have no input here; their regression tests are
+in `tests/`: #167 (a journal session survived `ext4_umount`,
+`test_umount_journal_session`), #177 (`ext4_journal_start` with a session
+open, `test_journal_start_twice`) and #181 (a failed `ext4_umount`,
+`test_umount_failed`). Since then every target unmounts at the end of an
+input and stops if that fails (`unmount_all()` in `fuzz_common.h`), so
+such state can no longer pass from one input to the next.

@@ -8,9 +8,16 @@ UndefinedBehaviorSanitizer, with leak checks:
 |---|---|---|
 | `fuzz_mount.c` | a disk image | mounts it read only and reads everything: directories, files, symlinks, xattr lists |
 | `fuzz_rw.c` | a disk image followed by an operation script (layout in the file) | mounts it read-write, replays the journal, runs up to 64 operations (create, write anywhere, truncate, rename, unlink, mkdir/rmdir, xattrs, symlinks, links, many entries to grow htrees, write-back cache), unmounts, then mounts the result read only and reads it all back |
+| `fuzz_rwx.c` | a disk image, an operation script, and a fault: which reads or writes fail, from the Nth on, once or for good | `fuzz_rw` with I/O errors and more operations: remounting in the middle, renames across types, readlink at offsets, xattr reads, 64 KiB writes, links to directories, growing truncates, cache flushes, listings with a rewind, tree removal, FIFOs, the journal stopped and started; then, with the device working again, everything must be readable |
+| `fuzz_partition.c` | a disk | scans its partition tables (MBR with logical partitions, GPT, the four entry MBR) and mounts the first partition read only |
+| `fuzz_mkfs.c` | the parameters of `ext4_mkfs` (layout in the file) | formats a RAM disk with them (size, block size, ext2/3/4, journal size, i-node size and count, group sizes, feature words, label), mounts it read-write and writes to it, reads it back read only, and reads the parameters back with `ext4_mkfs_read_info` |
 
-`fuzz_common.h` has the RAM block device over a copy of the input and the
-bounded tree walk.
+`fuzz_common.h` has the RAM block device over a copy of the input, with
+fault injection, and the bounded tree walk; at the end of every input it
+unmounts whatever is still mounted and stops if that fails, so no state
+passes to the next input. `fuzz_ops.h` has the operations `fuzz_rw` and
+`fuzz_rwx` share. [ext4.dict](ext4.dict) gives libFuzzer the magic
+numbers and names of the format.
 
 Inputs
 ------
@@ -18,9 +25,12 @@ Inputs
 - **Seeds** are made when the job runs by [make-seeds.sh](make-seeds.sh)
   with e2fsprogs: ext2, ext3 and ext4 layouts (block maps, journal,
   extents, metadata_csum, htree directories, in-inode and block xattrs,
-  POSIX ACL, fast and slow symlinks, 1 KiB and 2 KiB blocks), each with
-  three operation scripts appended for `fuzz_rw`. Fixed UUID, hash seed and
-  times make them reproducible.
+  POSIX ACL, fast and slow symlinks, 1, 2 and 4 KiB blocks, meta_bg,
+  large_dir, 128 byte i-nodes, deep extent trees, journals with
+  transactions to replay), MBR and GPT disks for `fuzz_partition`, and
+  parameters for `fuzz_mkfs`; each image with three operation scripts for
+  `fuzz_rw` and two with faults for `fuzz_rwx`. Fixed UUIDs, hash seeds,
+  times and partition ids make them reproducible.
 - **[crashes/](crashes)**: every input that ever crashed, hung or leaked in
   a target, minimised, kept as a regression test.
 
