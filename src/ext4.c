@@ -604,8 +604,11 @@ int ext4_umount(const char *mount_point)
 	int r;
 	struct ext4_mountpoint *mp = 0;
 
+	/* Only a mounted mount point: the name of an unmounted one stays in
+	 * s_mp, and unmounting it again would write its old superblock to
+	 * whatever the device holds by then (fork issue #181) */
 	for (i = 0; i < CONFIG_EXT4_MOUNTPOINTS_COUNT; ++i) {
-		if (!strcmp(s_mp[i].name, mount_point)) {
+		if (s_mp[i].mounted && !strcmp(s_mp[i].name, mount_point)) {
 			mp = &s_mp[i];
 			break;
 		}
@@ -634,9 +637,11 @@ int ext4_umount(const char *mount_point)
 			ext4_set32(&mp->fs.sb, write_time, t);
 	}
 
+	/* If the superblock cannot be written, the mount point stays
+	 * mounted, everything as it was, to be unmounted again (#181) */
 	r = ext4_fs_fini(&mp->fs);
 	if (r != EOK)
-		goto Finish;
+		return r;
 
 	mp->mounted = 0;
 
@@ -644,7 +649,6 @@ int ext4_umount(const char *mount_point)
 	ext4_bcache_fini_dynamic(mp->fs.bdev->bc);
 
 	r = ext4_block_fini(mp->fs.bdev);
-Finish:
 	mp->fs.bdev->fs = NULL;
 	return r;
 }
