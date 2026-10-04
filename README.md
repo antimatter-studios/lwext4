@@ -220,8 +220,8 @@ Supported ext2/3/4 features
 =====
 incompatible:
 ------------
-*  filetype, recover, meta_bg, extents, 64bit, flex_bg, metadata_csum_seed: **yes**
-*  compression, journal_dev, mmp, ea_inode, dirdata, largedir, inline_data: **no**
+*  filetype, recover, meta_bg, extents, 64bit, flex_bg, metadata_csum_seed, largedir: **yes**
+*  compression, journal_dev, mmp, ea_inode, dirdata, inline_data: **no**
 
 A filesystem with an unsupported incompatible feature is not mounted
 (`ENOTSUP`). The exception is mmp, which is ignored: such a filesystem is

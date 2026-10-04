@@ -102,8 +102,11 @@ uint64_t ext4_inode_get_size(struct ext4_sblock *sb, struct ext4_inode *inode)
 {
 	uint64_t v = to_le32(inode->size_lo);
 
+	/* size_hi is i_dir_acl of directories, except with large_dir */
 	if ((ext4_get32(sb, rev_level) > 0) &&
-	    (ext4_inode_is_type(sb, inode, EXT4_INODE_MODE_FILE)))
+	    (ext4_inode_is_type(sb, inode, EXT4_INODE_MODE_FILE) ||
+	     (ext4_sb_feature_incom(sb, EXT4_FINCOM_LARGEDIR) &&
+	      ext4_inode_is_type(sb, inode, EXT4_INODE_MODE_DIRECTORY))))
 		v |= ((uint64_t)to_le32(inode->size_hi)) << 32;
 
 	return v;
