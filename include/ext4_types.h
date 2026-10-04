@@ -294,10 +294,9 @@ struct ext4_sblock {
 	 EXT4_FRO_COM_DIR_NLINK |                          \
 	 EXT4_FRO_COM_EXTRA_ISIZE | EXT4_FRO_COM_HUGE_FILE)
 
-/*Ignored features:
- * RECOVER - journaling in lwext4 is not supported
- *           (probably won't be ever...)
- * MMP - multi-mout protection (impossible scenario)
+/*Features that do not prevent mounting:
+ * RECOVER - the journal needs replaying, which ext4_recover() does
+ * MMP - multi-mount protection, not supported: mounted without it
  * */
 #define EXT_FINCOM_IGNORED                                 \
 	EXT4_FINCOM_RECOVER | EXT4_FINCOM_MMP
