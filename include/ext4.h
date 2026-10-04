@@ -150,11 +150,11 @@ int ext4_mount(const char *dev_name,
  * the journalled blocks cannot be written, the session ends without them
  * and the journal stays marked for replay (ext4_recover at the next
  * mount). If the superblock cannot be written, the call fails and the
- * mount point stays mounted: call it again.
+ * mount point stays mounted, usable as before: call it again.
  *
  * @param   mount_point Mount point.
  *
- * @return  Standard error code */
+ * @return  Standard error code; ENODEV if the mount point is not mounted */
 int ext4_umount(const char *mount_point);
 
 /**@brief   Starts journaling. Journaling start/stop functions are transparent
