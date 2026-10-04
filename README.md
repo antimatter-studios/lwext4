@@ -241,9 +241,10 @@ read-only:
 A filesystem with an unsupported read-only feature is mounted read-only.
 
 Images made with the defaults of e2fsprogs 1.47 and later
-(metadata_csum_seed, orphan_file) are supported. lwext4 does not release
-orphan inodes (files deleted while still open when Linux stopped) when it
-mounts a filesystem; e2fsck does.
+(metadata_csum_seed, orphan_file) are supported. Orphan inodes (files
+deleted while still open, or a truncate in progress, when Linux stopped)
+are released when a filesystem is mounted read-write, as Linux does; with
+orphan_file, a filesystem that has orphans pending is mounted read-only.
 
 Project tree
 =====
