@@ -225,6 +225,32 @@ static int ext4_dir_iterator_set(struct ext4_dir_iter *it,
 	return EOK;
 }
 
+/* The block of a directory to look at after the hole at iblock: the next
+ * mapped one with extents (a damaged size may make a hole of millions of
+ * blocks; the extent tree knows where it ends), else iblock + 1. */
+static int ext4_dir_skip_hole(struct ext4_inode_ref *ref, uint32_t iblock,
+			      uint64_t *next)
+{
+	*next = (uint64_t)iblock + 1;
+#if CONFIG_EXTENT_ENABLE && CONFIG_EXTENTS_ENABLE
+	struct ext4_sblock *sb = &ref->fs->sb;
+	ext4_lblk_t mapped;
+	int r;
+
+	if (ext4_sb_feature_incom(sb, EXT4_FINCOM_EXTENTS) &&
+	    ext4_inode_has_flag(ref->inode, EXT4_INODE_FLAG_EXTENTS)) {
+		r = ext4_extent_next_mapped(ref, iblock, &mapped);
+		if (r != EOK)
+			return r;
+		if (mapped > iblock)
+			*next = mapped;
+	}
+#else
+	(void)ref;
+#endif
+	return EOK;
+}
+
 /**@brief Seek to next valid directory entry.
  *        Here can be jumped to the next data block.
  *        Holes in the directory are skipped.
@@ -272,24 +298,13 @@ static int ext4_dir_iterator_seek(struct ext4_dir_iter *it, uint64_t pos)
 			return r;
 
 		if (next_blk == 0) {
-			/* Hole in the directory: continue at the next mapped
-			 * block (with extents, the hole is skipped at once: a
-			 * damaged size may make it millions of blocks) */
-			uint64_t next = (uint64_t)next_blk_idx + 1;
-#if CONFIG_EXTENT_ENABLE && CONFIG_EXTENTS_ENABLE
-			ext4_lblk_t mapped;
+			/* Hole in the directory: continue after it */
+			uint64_t next;
 
-			if (ext4_sb_feature_incom(sb, EXT4_FINCOM_EXTENTS) &&
-			    ext4_inode_has_flag(inode, EXT4_INODE_FLAG_EXTENTS)) {
-				r = ext4_extent_next_mapped(it->inode_ref,
-							    next_blk_idx,
-							    &mapped);
-				if (r != EOK)
-					return r;
-				if (mapped > next_blk_idx)
-					next = mapped;
-			}
-#endif
+			r = ext4_dir_skip_hole(it->inode_ref, next_blk_idx,
+					       &next);
+			if (r != EOK)
+				return r;
 			pos = next * block_size;
 			continue;
 		}
@@ -565,9 +580,18 @@ int ext4_dir_find_entry(struct ext4_dir_search_result *result,
 		if (r != EOK)
 			return r;
 
-		/* Hole in the directory */
-		if (fblock == 0)
+		/* Hole in the directory: continue after it */
+		if (fblock == 0) {
+			uint64_t next;
+
+			r = ext4_dir_skip_hole(parent, iblock, &next);
+			if (r != EOK)
+				return r;
+			if (next >= total_blocks)
+				break;
+			iblock = (uint32_t)next - 1;
 			continue;
+		}
 
 		/* Load data block */
 		struct ext4_block b;
