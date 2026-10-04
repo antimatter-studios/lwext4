@@ -1666,6 +1666,65 @@ static int ext4_fs_get_inode_dblk_idx_internal(struct ext4_inode_ref *inode_ref,
 }
 
 
+/* The highest non-zero entry of an indirect block, -1 if none */
+static int ext4_fs_bmap_last_entry(struct ext4_fs *fs, ext4_fsblk_t blk,
+				   uint32_t *entry, ext4_fsblk_t *ptr)
+{
+	uint32_t n = ext4_sb_get_block_size(&fs->sb) / sizeof(uint32_t);
+	struct ext4_block block;
+	int rc = ext4_trans_block_get(fs->bdev, &block, blk);
+
+	if (rc != EOK)
+		return rc;
+	*ptr = 0;
+	while (n-- > 0) {
+		uint32_t v = to_le32(((uint32_t *)block.data)[n]);
+
+		if (v) {
+			*entry = n;
+			*ptr = v;
+			break;
+		}
+	}
+	return ext4_block_set(fs->bdev, &block);
+}
+
+int ext4_fs_bmap_mapped_end(struct ext4_inode_ref *inode_ref, uint64_t *end)
+{
+	struct ext4_fs *fs = inode_ref->fs;
+	struct ext4_inode *inode = inode_ref->inode;
+	int l, i;
+
+	/* The highest non-zero indirect slot, then the highest non-zero entry
+	 * on each level below it */
+	for (l = 3; l >= 1; l--) {
+		ext4_fsblk_t ptr = ext4_inode_get_indirect_block(inode, l - 1);
+		uint64_t base = fs->inode_block_limits[l - 1];
+		int lev;
+
+		for (lev = l; ptr && lev > 0; lev--) {
+			uint32_t entry = 0;
+			int rc = ext4_fs_bmap_last_entry(fs, ptr, &entry, &ptr);
+
+			if (rc != EOK)
+				return rc;
+			base += (uint64_t)entry * fs->inode_blocks_per_level[lev - 1];
+		}
+		if (ptr) {
+			*end = base + 1;
+			return EOK;
+		}
+	}
+	for (i = EXT4_INODE_DIRECT_BLOCK_COUNT - 1; i >= 0; i--) {
+		if (ext4_inode_get_direct_block(inode, (uint32_t)i)) {
+			*end = (uint64_t)i + 1;
+			return EOK;
+		}
+	}
+	*end = 0;
+	return EOK;
+}
+
 int ext4_fs_bmap_hole_end(struct ext4_inode_ref *inode_ref,
 			  ext4_lblk_t iblock, uint64_t *next)
 {

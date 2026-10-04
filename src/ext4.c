@@ -1009,12 +1009,30 @@ static int ext4_write_back_end(struct ext4_mountpoint *mp,
 	return r != EOK ? r : rw;
 }
 
-/* Where the data of an i-node ends at the latest: after its last extent,
- * or at what a block map can address. */
+/* Where the data of an i-node ends at the latest: after its last extent
+ * or its highest mapped block. UINT64_MAX for i-nodes whose i_block holds
+ * no block map (fast symlinks, devices). */
 static int ext4_trunc_data_end(struct ext4_inode_ref *ref, uint64_t *end)
 {
 	struct ext4_fs *fs = ref->fs;
 	uint64_t bs = ext4_sb_get_block_size(&fs->sb);
+	uint32_t type = ext4_inode_type(&fs->sb, ref->inode);
+
+	/* Inline data fits in the i-node: i_block and the rest of the i-node
+	 * (system.data) */
+	if (ext4_inline_has_data(&fs->sb, ref->inode)) {
+		*end = sizeof(ref->inode->blocks) +
+		       ext4_get16(&fs->sb, inode_size);
+		return EOK;
+	}
+
+	if ((type != EXT4_INODE_MODE_FILE &&
+	     type != EXT4_INODE_MODE_DIRECTORY &&
+	     type != EXT4_INODE_MODE_SOFTLINK) ||
+	    ext4_inode_is_fast_symlink(&fs->sb, ref->inode)) {
+		*end = UINT64_MAX;
+		return EOK;
+	}
 
 #if CONFIG_EXTENT_ENABLE && CONFIG_EXTENTS_ENABLE
 	if (ext4_sb_feature_incom(&fs->sb, EXT4_FINCOM_EXTENTS) &&
@@ -1026,8 +1044,13 @@ static int ext4_trunc_data_end(struct ext4_inode_ref *ref, uint64_t *end)
 		return r;
 	}
 #endif
-	*end = (uint64_t)fs->inode_block_limits[3] * bs;
-	return EOK;
+	{
+		uint64_t blocks;
+		int r = ext4_fs_bmap_mapped_end(ref, &blocks);
+
+		*end = blocks * bs;
+		return r;
+	}
 }
 
 static int ext4_trunc_inode(struct ext4_mountpoint *mp,
@@ -1046,8 +1069,7 @@ static int ext4_trunc_inode(struct ext4_mountpoint *mp,
 
 	/* Nothing is mapped above where the data ends: start the steps there.
 	 * A damaged size of up to 2^64 bytes would take forever in steps. */
-	if (inode_size > new_size &&
-	    !ext4_inline_has_data(&fs->sb, inode_ref.inode)) {
+	if (inode_size > new_size) {
 		uint64_t end;
 
 		r = ext4_trunc_data_end(&inode_ref, &end);
