@@ -47,6 +47,7 @@
 
 #include <ext4_trans.h>
 #include <ext4_dir.h>
+#include <ext4_extent.h>
 #include <ext4_dir_idx.h>
 #include <ext4_crc32.h>
 #include <ext4_inode.h>
@@ -271,8 +272,25 @@ static int ext4_dir_iterator_seek(struct ext4_dir_iter *it, uint64_t pos)
 			return r;
 
 		if (next_blk == 0) {
-			/* Hole in the directory: continue at the next block */
-			pos = ((uint64_t)next_blk_idx + 1) * block_size;
+			/* Hole in the directory: continue at the next mapped
+			 * block (with extents, the hole is skipped at once: a
+			 * damaged size may make it millions of blocks) */
+			uint64_t next = (uint64_t)next_blk_idx + 1;
+#if CONFIG_EXTENT_ENABLE && CONFIG_EXTENTS_ENABLE
+			ext4_lblk_t mapped;
+
+			if (ext4_sb_feature_incom(sb, EXT4_FINCOM_EXTENTS) &&
+			    ext4_inode_has_flag(inode, EXT4_INODE_FLAG_EXTENTS)) {
+				r = ext4_extent_next_mapped(it->inode_ref,
+							    next_blk_idx,
+							    &mapped);
+				if (r != EOK)
+					return r;
+				if (mapped > next_blk_idx)
+					next = mapped;
+			}
+#endif
+			pos = next * block_size;
 			continue;
 		}
 
