@@ -22,6 +22,8 @@ permissions:
 
 jobs:
   build:
+    # The required check of pull requests
+    name: pages
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -33,6 +35,7 @@ jobs:
           path: build-ci/pages/site
 
   deploy:
+    name: pages-deploy
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     needs: build
     runs-on: ubuntu-24.04
