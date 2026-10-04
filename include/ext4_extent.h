@@ -60,6 +60,15 @@ int ext4_extent_get_blocks(struct ext4_inode_ref *inode_ref, ext4_lblk_t iblock,
  * @param inode_ref   I-node to release blocks from
  * @param iblock_from First logical block to release
  * @return Error code */
+/**@brief First logical block from iblock on that an extent maps.
+ * @param inode_ref I-node using extents
+ * @param iblock    logical block
+ * @param next      that block, iblock itself if it is mapped,
+ *                  EXT_MAX_BLOCKS if none
+ * @return Error code*/
+int ext4_extent_next_mapped(struct ext4_inode_ref *inode_ref,
+			    ext4_lblk_t iblock, ext4_lblk_t *next);
+
 int ext4_extent_remove_space(struct ext4_inode_ref *inode_ref, ext4_lblk_t from,
 			     ext4_lblk_t to);
 

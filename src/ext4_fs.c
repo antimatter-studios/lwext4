@@ -1659,6 +1659,62 @@ static int ext4_fs_get_inode_dblk_idx_internal(struct ext4_inode_ref *inode_ref,
 }
 
 
+int ext4_fs_bmap_hole_end(struct ext4_inode_ref *inode_ref,
+			  ext4_lblk_t iblock, uint64_t *next)
+{
+	struct ext4_fs *fs = inode_ref->fs;
+	struct ext4_inode *inode = inode_ref->inode;
+	ext4_fsblk_t current_block;
+	uint64_t off;
+	unsigned int l = 0, i;
+
+	*next = (uint64_t)iblock + 1;
+	if (iblock < EXT4_INODE_DIRECT_BLOCK_COUNT)
+		return EOK;
+
+	for (i = 1; i < 4; i++) {
+		if (iblock < fs->inode_block_limits[i]) {
+			l = i;
+			break;
+		}
+	}
+	if (l == 0) {
+		/* Past what a block map reaches */
+		*next = UINT64_MAX;
+		return EOK;
+	}
+
+	/* An empty indirect slot of the i-node: its whole level */
+	current_block = ext4_inode_get_indirect_block(inode, l - 1);
+	if (!current_block) {
+		*next = fs->inode_block_limits[l];
+		return EOK;
+	}
+
+	off = iblock - fs->inode_block_limits[l - 1];
+	while (l > 0) {
+		struct ext4_block block;
+		uint64_t per = fs->inode_blocks_per_level[l - 1];
+		int rc = ext4_trans_block_get(fs->bdev, &block, current_block);
+
+		if (rc != EOK)
+			return rc;
+		current_block = to_le32(((uint32_t *)block.data)[off / per]);
+		rc = ext4_block_set(fs->bdev, &block);
+		if (rc != EOK)
+			return rc;
+
+		/* An empty pointer: the blocks it would cover */
+		if (!current_block) {
+			*next = iblock - off % per + per;
+			return EOK;
+		}
+		off %= per;
+		l--;
+	}
+	return EOK;
+}
+
 int ext4_fs_get_inode_dblk_idx(struct ext4_inode_ref *inode_ref,
 			       ext4_lblk_t iblock, ext4_fsblk_t *fblock,
 			       bool support_unwritten)
