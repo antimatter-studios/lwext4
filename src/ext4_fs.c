@@ -1476,8 +1476,9 @@ int ext4_fs_indirect_find_goal(struct ext4_inode_ref *inode_ref,
 
 	/* If inode has some blocks, get last block address + 1 */
 	if (iblock_cnt > 0) {
+		/* (a hole gives no goal, below) */
 		r = ext4_fs_get_inode_dblk_idx(inode_ref, iblock_cnt - 1,
-					       goal, false);
+					       goal, true);
 		if (r != EOK)
 			return r;
 
@@ -1559,8 +1560,6 @@ static int ext4_fs_get_inode_dblk_idx_internal(struct ext4_inode_ref *inode_ref,
 
 		current_block = current_fsblk;
 		*fblock = current_block;
-
-		ext4_assert(*fblock || support_unwritten);
 		return EOK;
 	}
 #endif
@@ -1649,8 +1648,15 @@ int ext4_fs_get_inode_dblk_idx(struct ext4_inode_ref *inode_ref,
 			       ext4_lblk_t iblock, ext4_fsblk_t *fblock,
 			       bool support_unwritten)
 {
-	return ext4_fs_get_inode_dblk_idx_internal(inode_ref, iblock, fblock,
-						   false, support_unwritten);
+	int r = ext4_fs_get_inode_dblk_idx_internal(inode_ref, iblock, fblock,
+						    false, support_unwritten);
+
+	/* A caller that does not take holes (htree and journal blocks) gets
+	 * an error for one: the metadata is damaged. Asserting, or block 0,
+	 * would take the program down on a damaged image. */
+	if (r == EOK && !*fblock && !support_unwritten)
+		return EIO;
+	return r;
 }
 
 static int ext4_fs_set_inode_data_block_index(struct ext4_inode_ref *inode_ref,
