@@ -35,5 +35,5 @@ ci/run.sh fuzz run 3600 fuzz_rw   # one target
 
 New crash inputs land in `build-ci/fuzz/art/`. To report one: minimise it
 (`build-ci/fuzz/<target> -minimize_crash=1 -runs=10000 <input>`), file an
-issue, and add the minimised input to `crashes/` in the pull request that
-fixes it, so `fuzz-replay` keeps it fixed.
+issue, and add the input, gzipped (`gzip -9 -n`), to `crashes/` in the
+pull request that fixes it, so `fuzz-replay` keeps it fixed.

@@ -13,7 +13,7 @@
 #
 # Targets: one per tests/fuzz/fuzz_<name>.c. Inputs: the seed corpus that
 # tests/fuzz/make-seeds.sh makes (reproducibly, with e2fsprogs) and
-# tests/fuzz/crashes/ (every input that ever crashed a target, minimised,
+# tests/fuzz/crashes/ (every input that ever crashed a target, gzipped,
 # kept as regression tests).
 mode=${1:-replay}
 
@@ -45,10 +45,17 @@ sh tests/fuzz/make-seeds.sh "$b/seeds" >/dev/null
 export ASAN_OPTIONS=detect_leaks=1:abort_on_error=1
 export UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1
 
+# The crash inputs are stored gzipped (mostly zeros of disk images)
+rm -rf "$b/crashes"
+mkdir -p "$b/crashes"
+for f in tests/fuzz/crashes/*.gz; do
+	[ -e "$f" ] || continue
+	gzip -dc "$f" >"$b/crashes/$(basename "$f" .gz)"
+done
+
 inputs()
 {
-	find "$b/seeds" tests/fuzz/crashes -type f ! -name '*.md' |
-		LC_ALL=C sort
+	find "$b/seeds" "$b/crashes" -type f | LC_ALL=C sort
 }
 
 case "$mode" in
@@ -86,7 +93,7 @@ run)
 		"$b/$t" -max_total_time="$secs" -timeout=10 -rss_limit_mb=2048 \
 			-max_len=2400000 -artifact_prefix="$b/art/$t-" \
 			-print_final_stats=1 "$b/corpus/$t" "$b/seeds" \
-			tests/fuzz/crashes 2>&1 | tail -n 40 || true
+			"$b/crashes" 2>&1 | tail -n 40 || true
 	done
 	ls -l "$b/art"
 	[ -z "$(ls -A "$b/art")" ]
