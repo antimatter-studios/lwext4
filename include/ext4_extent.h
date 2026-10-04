@@ -60,6 +60,13 @@ int ext4_extent_get_blocks(struct ext4_inode_ref *inode_ref, ext4_lblk_t iblock,
  * @param inode_ref   I-node to release blocks from
  * @param iblock_from First logical block to release
  * @return Error code */
+/**@brief End of the data of an i-node using extents: the logical block
+ *        after its last extent (0 without extents).
+ * @param inode_ref I-node using extents
+ * @param end       that block
+ * @return Error code*/
+int ext4_extent_mapped_end(struct ext4_inode_ref *inode_ref, ext4_lblk_t *end);
+
 int ext4_extent_remove_space(struct ext4_inode_ref *inode_ref, ext4_lblk_t from,
 			     ext4_lblk_t to);
 
