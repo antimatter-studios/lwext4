@@ -95,6 +95,10 @@ struct ext4_mountpoint {
 
 	/**@brief   Block cache.*/
 	struct ext4_bcache bc;
+
+	/**@brief   Newest time of this filesystem: its superblock times when
+	 *          mounted, then every stamp. Times never go below it.*/
+	uint32_t time_floor;
 };
 
 /**@brief   Block devices descriptor.*/
@@ -112,6 +116,117 @@ static struct ext4_block_devices s_bdevices[CONFIG_EXT4_BLOCKDEVS_COUNT];
 
 /**@brief   Mountpoints.*/
 static struct ext4_mountpoint s_mp[CONFIG_EXT4_MOUNTPOINTS_COUNT];
+
+/*
+ * Clock (fork issue #129): see ext4_clock_setup() in ext4.h.
+ */
+#if CONFIG_EXT4_CLOCK
+static uint32_t (*s_clock_now)(void);
+static uint32_t (*s_clock_uptime)(void);
+static uint32_t s_clock_base;
+static uint32_t s_clock_base_uptime;
+
+void ext4_clock_setup(uint32_t (*now)(void))
+{
+	s_clock_now = now;
+}
+
+void ext4_clock_set(uint32_t unix_seconds)
+{
+	s_clock_base = unix_seconds;
+	s_clock_base_uptime = s_clock_uptime ? s_clock_uptime() : 0;
+}
+
+void ext4_clock_uptime_setup(uint32_t (*uptime)(void))
+{
+	/* Keep the time reached so far, advance it with the new counter */
+	s_clock_base = ext4_clock_get();
+	s_clock_uptime = uptime;
+	s_clock_base_uptime = uptime ? uptime() : 0;
+}
+
+uint32_t ext4_clock_get(void)
+{
+	uint32_t t = CONFIG_EXT4_CLOCK_MIN;
+
+	if (s_clock_now) {
+		t = s_clock_now();
+	} else if (s_clock_base) {
+		t = s_clock_base;
+		if (s_clock_uptime)
+			t += s_clock_uptime() - s_clock_base_uptime;
+	}
+	return t < CONFIG_EXT4_CLOCK_MIN ? CONFIG_EXT4_CLOCK_MIN : t;
+}
+
+/* The time of a change on a mount point: the clock, never below the
+ * newest time of the filesystem. 0 if no time is known at all. */
+static uint32_t ext4_now(struct ext4_mountpoint *mp)
+{
+	uint32_t t = ext4_clock_get();
+
+	if (t < mp->time_floor)
+		t = mp->time_floor;
+	mp->time_floor = t;
+	return t;
+}
+
+/* Set times of an i-node to now. Without a known time the i-node keeps
+ * the times it has. */
+static void ext4_stamp(struct ext4_mountpoint *mp,
+		       struct ext4_inode_ref *ref, uint32_t which)
+{
+	uint32_t t = ext4_now(mp);
+
+	if (!t)
+		return;
+	ext4_inode_stamp(&mp->fs.sb, ref->inode, which, t);
+	ref->dirty = true;
+}
+
+static int ext4_stamp_ino(struct ext4_mountpoint *mp, uint32_t ino,
+			  uint32_t which)
+{
+	struct ext4_inode_ref ref;
+	int r = ext4_fs_get_inode_ref(&mp->fs, ino, &ref);
+
+	if (r != EOK)
+		return r;
+	ext4_stamp(mp, &ref, which);
+	return ext4_fs_put_inode_ref(&ref);
+}
+
+/* Seed the floor with the newest time stored in the filesystem. */
+static void ext4_clock_mount(struct ext4_mountpoint *mp)
+{
+	struct ext4_sblock *sb = &mp->fs.sb;
+	uint32_t t = ext4_get32(sb, mkfs_time);
+
+	if (ext4_get32(sb, mount_time) > t)
+		t = ext4_get32(sb, mount_time);
+	if (ext4_get32(sb, write_time) > t)
+		t = ext4_get32(sb, write_time);
+	mp->time_floor = t;
+}
+
+/* i_dtime of a deleted i-node: now, or as before -1 without a time. */
+static uint32_t ext4_del_time(struct ext4_mountpoint *mp)
+{
+	uint32_t t = ext4_now(mp);
+
+	return t ? t : (uint32_t)-1L;
+}
+#else
+void ext4_clock_setup(uint32_t (*now)(void)) { (void)now; }
+void ext4_clock_set(uint32_t unix_seconds) { (void)unix_seconds; }
+void ext4_clock_uptime_setup(uint32_t (*uptime)(void)) { (void)uptime; }
+uint32_t ext4_clock_get(void) { return 0; }
+#define ext4_now(mp) ((void)(mp), 0u)
+#define ext4_stamp(mp, ref, which) ((void)(mp), (void)(ref), (void)(which))
+#define ext4_stamp_ino(mp, ino, which) ((void)(mp), (void)(ino), EOK)
+#define ext4_clock_mount(mp) ((void)(mp))
+#define ext4_del_time(mp) ((void)(mp), (uint32_t)-1L)
+#endif
 
 int ext4_device_register(struct ext4_blockdev *bd,
 			 const char *dev_name)
@@ -228,6 +343,9 @@ static int ext4_link(struct ext4_mountpoint *mp, struct ext4_inode_ref *parent,
 	if (r != EOK)
 		return r;
 
+	ext4_stamp(mp, parent, EXT4_INODE_MTIME | EXT4_INODE_CTIME);
+	ext4_stamp(mp, ch, EXT4_INODE_CTIME);
+
 	/* Fill new dir -> add '.' and '..' entries.
 	 * Also newly allocated inode should have 0 link count.
 	 */
@@ -309,10 +427,13 @@ static int ext4_link(struct ext4_mountpoint *mp, struct ext4_inode_ref *parent,
 	return r;
 }
 
+/* stamp_parent: false while ext4_dir_rm() empties a directory that it
+ * removes afterwards: stamping it for every entry would only write its
+ * i-node again and again. */
 static int ext4_unlink(struct ext4_mountpoint *mp,
 		       struct ext4_inode_ref *parent,
 		       struct ext4_inode_ref *child, const char *name,
-		       uint32_t name_len)
+		       uint32_t name_len, bool stamp_parent)
 {
 	bool has_children;
 	int rc = ext4_has_children(&has_children, child);
@@ -337,21 +458,9 @@ static int ext4_unlink(struct ext4_mountpoint *mp,
 		parent->dirty = true;
 	}
 
-	/*
-	 * TODO: Update timestamps of the parent
-	 * (when we have wall-clock time).
-	 *
-	 * ext4_inode_set_change_inode_time(parent->inode, (uint32_t) now);
-	 * ext4_inode_set_modification_time(parent->inode, (uint32_t) now);
-	 * parent->dirty = true;
-	 */
-
-	/*
-	 * TODO: Update timestamp for inode.
-	 *
-	 * ext4_inode_set_change_inode_time(child->inode,
-	 *     (uint32_t) now);
-	 */
+	if (stamp_parent)
+		ext4_stamp(mp, parent, EXT4_INODE_MTIME | EXT4_INODE_CTIME);
+	ext4_stamp(mp, child, EXT4_INODE_CTIME);
 	if (ext4_inode_get_links_cnt(child->inode)) {
 		ext4_fs_inode_links_count_dec(child);
 		child->dirty = true;
@@ -447,6 +556,16 @@ int ext4_mount(const char *dev_name, const char *mount_point,
 	bd->fs = &mp->fs;
 	mp->mounted = 1;
 
+	ext4_clock_mount(mp);
+	if (!mp->fs.read_only) {
+		/* Written with the next superblock write, at the latest when
+		 * unmounting, as the mount count */
+		uint32_t t = ext4_now(mp);
+
+		if (t)
+			ext4_set32(&mp->fs.sb, mount_time, t);
+	}
+
 	/* Orphans of a filesystem whose journal needs replaying are released
 	 * by ext4_recover(), after the replay. */
 	if (!ext4_sb_feature_incom(&mp->fs.sb, EXT4_FINCOM_RECOVER))
@@ -470,6 +589,15 @@ int ext4_umount(const char *mount_point)
 
 	if (!mp)
 		return ENODEV;
+
+	if (!mp->fs.read_only) {
+		/* The superblock write of ext4_fs_fini() saves it: the next
+		 * mount starts the clock from here when no other is known */
+		uint32_t t = ext4_now(mp);
+
+		if (t)
+			ext4_set32(&mp->fs.sb, write_time, t);
+	}
 
 	r = ext4_fs_fini(&mp->fs);
 	if (r != EOK)
@@ -1024,7 +1152,7 @@ static int ext4_orphan_cleanup(struct ext4_mountpoint *mp)
 		if (r != EOK)
 			return r;
 		if (!links) {
-			ext4_inode_set_del_time(ref.inode, -1L);
+			ext4_inode_set_del_time(ref.inode, ext4_del_time(mp));
 			r = ext4_fs_free_inode(&ref);
 		} else {
 #if CONFIG_EXTENT_ENABLE && CONFIG_EXTENTS_ENABLE
@@ -1170,6 +1298,9 @@ static int ext4_generic_open2(ext4_file *f, const char *path, int flags,
 				break;
 
 			ext4_fs_inode_blocks_init(fs, &child_ref);
+			ext4_stamp(mp, &child_ref,
+				   EXT4_INODE_ATIME | EXT4_INODE_MTIME |
+				   EXT4_INODE_CTIME | EXT4_INODE_CRTIME);
 
 			/*Link with root dir.*/
 			r = ext4_link(mp, &ref, &child_ref, path, len, false);
@@ -1439,6 +1570,7 @@ static int ext4_remove_orig_reference(const char *path, uint32_t name_off,
 	r = ext4_dir_remove_entry(parent_ref, path, len);
 	if (r != EOK)
 		goto Finish;
+	ext4_stamp(mp, parent_ref, EXT4_INODE_MTIME | EXT4_INODE_CTIME);
 
 	if (ext4_inode_is_type(&mp->fs.sb, child_ref->inode,
 			       EXT4_INODE_MODE_DIRECTORY)) {
@@ -1710,13 +1842,13 @@ int ext4_fremove(const char *path)
 	len = ext4_path_check(path, &is_goal);
 
 	/*Unlink from parent*/
-	r = ext4_unlink(mp, &parent, &child, path, len);
+	r = ext4_unlink(mp, &parent, &child, path, len, true);
 	if (r != EOK)
 		goto Finish;
 
 	/*Link count is zero, the inode should be freed. */
 	if (!ext4_inode_get_links_cnt(child.inode)) {
-		ext4_inode_set_del_time(child.inode, -1L);
+		ext4_inode_set_del_time(child.inode, ext4_del_time(mp));
 
 		r = ext4_fs_free_inode(&child);
 		if (r != EOK)
@@ -1909,6 +2041,9 @@ int ext4_ftruncate(ext4_file *f, uint64_t size)
 
 	ext4_trans_start(f->mp);
 	r = ext4_ftruncate_no_lock(f, size);
+	if (r == EOK)
+		r = ext4_stamp_ino(f->mp, f->inode,
+				   EXT4_INODE_MTIME | EXT4_INODE_CTIME);
 	if (r != EOK)
 		ext4_trans_abort(f->mp);
 	else
@@ -2331,6 +2466,9 @@ out_fsize:
 		ref.dirty = true;
 		ext4_note_size(&file->mp->fs, file->fsize);
 	}
+	if (file->fpos != fpos0)
+		ext4_stamp(file->mp, &ref,
+			   EXT4_INODE_MTIME | EXT4_INODE_CTIME);
 
 	/* Everything up to fpos is written and accounted for: keep it, also
 	 * when the rest did not fit (r is ENOSPC then). */
@@ -2509,6 +2647,7 @@ int ext4_mode_set(const char *path, uint32_t mode)
 	orig_mode &= ~0xFFF;
 	orig_mode |= mode & 0xFFF;
 	ext4_inode_set_mode(&mp->fs.sb, inode_ref.inode, orig_mode);
+	ext4_stamp(mp, &inode_ref, EXT4_INODE_CTIME);
 
 	inode_ref.dirty = true;
 	r = ext4_trans_put_inode_ref(mp, &inode_ref);
@@ -2539,6 +2678,7 @@ int ext4_owner_set(const char *path, uint32_t uid, uint32_t gid)
 
 	ext4_inode_set_uid(inode_ref.inode, uid);
 	ext4_inode_set_gid(inode_ref.inode, gid);
+	ext4_stamp(mp, &inode_ref, EXT4_INODE_CTIME);
 
 	inode_ref.dirty = true;
 	r = ext4_trans_put_inode_ref(mp, &inode_ref);
@@ -3072,6 +3212,8 @@ int ext4_setxattr(const char *path, const char *name, size_t name_len,
 
 	r = ext4_xattr_set(&inode_ref, name_index, dissected_name,
 			dissected_len, data, data_size);
+	if (r == EOK)
+		ext4_stamp(mp, &inode_ref, EXT4_INODE_CTIME);
 
 	rr = ext4_fs_put_inode_ref(&inode_ref);
 	if (r == EOK)
@@ -3251,6 +3393,8 @@ int ext4_removexattr(const char *path, const char *name, size_t name_len)
 
 	r = ext4_xattr_remove(&inode_ref, name_index, dissected_name,
 			      dissected_len);
+	if (r == EOK)
+		ext4_stamp(mp, &inode_ref, EXT4_INODE_CTIME);
 
 	ext4_fs_put_inode_ref(&inode_ref);
 Finish:
@@ -3426,7 +3570,7 @@ int ext4_dir_rm(const char *path)
 				 * unlink.*/
 				r = ext4_unlink(f.mp, &act, &child,
 						(char *)it.curr->name,
-						it.curr->name_len);
+						it.curr->name_len, false);
 				if (r != EOK) {
 					ext4_fs_put_inode_ref(&child);
 					goto End;
@@ -3434,7 +3578,7 @@ int ext4_dir_rm(const char *path)
 
 				if (last_link) {
 					ext4_inode_set_del_time(child.inode,
-								-1L);
+							ext4_del_time(mp));
 					ext4_inode_set_links_cnt(child.inode,
 								 0);
 					child.dirty = true;
@@ -3504,7 +3648,7 @@ End:
 		 * unlinked.
 		 * Last unlink from root of current directory*/
 		r = ext4_unlink(f.mp, &parent, &act,
-				(char *)path, len);
+				(char *)path, len, true);
 		if (r != EOK) {
 			ext4_fs_put_inode_ref(&parent);
 			ext4_fs_put_inode_ref(&act);
@@ -3512,7 +3656,7 @@ End:
 		}
 
 		if (ext4_inode_get_links_cnt(act.inode) == 2) {
-			ext4_inode_set_del_time(act.inode, -1L);
+			ext4_inode_set_del_time(act.inode, ext4_del_time(mp));
 			ext4_inode_set_links_cnt(act.inode, 0);
 			act.dirty = true;
 			/*Truncate*/

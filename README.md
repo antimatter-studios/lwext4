@@ -178,6 +178,9 @@ Features
 
 * filetypes: regular, directories, softlinks
 * support for hardlinks
+* timestamps from whatever clock the board has: a real-time clock, a start
+  date advanced by an uptime counter, or, with no clock at all, the newest
+  time stored on the filesystem (`ext4_clock_setup` in `ext4.h`)
 * multiple blocksize supported: 1KB, 2KB, 4KB ... 64KB
 * little/big endian architectures supported
 * multiple configurations (ext2/ext3/ext4)

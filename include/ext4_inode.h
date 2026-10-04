@@ -127,6 +127,23 @@ uint32_t ext4_inode_get_modif_time(struct ext4_inode *inode);
  */
 void ext4_inode_set_modif_time(struct ext4_inode *inode, uint32_t time);
 
+/**@brief Times @ref ext4_inode_stamp sets.*/
+#define EXT4_INODE_ATIME 0x1
+#define EXT4_INODE_MTIME 0x2
+#define EXT4_INODE_CTIME 0x4
+#define EXT4_INODE_CRTIME 0x8
+
+/**@brief Set some of the access, modification, change and creation times
+ *        of an i-node to the same time. The extended fields of large
+ *        i-nodes get the epoch bits (times after 2038) and 0 nanoseconds;
+ *        the creation time exists only in large i-nodes.
+ * @param sb    Superblock
+ * @param inode I-node
+ * @param which EXT4_INODE_ATIME | EXT4_INODE_MTIME | ...
+ * @param time  Unix time, seconds (unsigned: until 2106) */
+void ext4_inode_stamp(struct ext4_sblock *sb, struct ext4_inode *inode,
+		      uint32_t which, uint32_t time);
+
 /**@brief Get time, when i-node was deleted.
  * @param inode I-node
  * @return Time of the delete action (POSIX)

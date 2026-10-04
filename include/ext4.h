@@ -206,6 +206,48 @@ struct ext4_mount_stats {
 int ext4_mount_point_stats(const char *mount_point,
 			   struct ext4_mount_stats *stats);
 
+/**@brief   Clock of the timestamps lwext4 writes (CONFIG_EXT4_CLOCK).
+ *
+ * Give lwext4 whatever the board knows about the time; all optional:
+ *  - a real-time clock, NTP or GPS: @ref ext4_clock_setup
+ *  - a start date (e.g. the firmware build date, or a date received from
+ *    a phone), with @ref ext4_clock_set, and optionally an uptime counter
+ *    with @ref ext4_clock_uptime_setup that advances it
+ *  - nothing: lwext4 uses the newest time stored in the filesystem (the
+ *    last mount, write or mkfs, also by Linux), so new files are never
+ *    older than the last use of the card, and the time moves on with each
+ *    session instead of resetting to 1970.
+ *
+ * Times never go backwards on a mount point: a stamp is at least the
+ * newest time of that filesystem. With no time known at all (a card that
+ * never had one and no clock), existing times stay as they are.
+ *
+ * Call these before mounting, or with the mount points' locks held.
+ *
+ * @param   now Unix time in seconds (unsigned: until 2106); NULL removes
+ *              the clock. */
+void ext4_clock_setup(uint32_t (*now)(void));
+
+/**@brief   Set the time (Unix seconds); with an uptime counter
+ *          (@ref ext4_clock_uptime_setup) it advances from there. May be
+ *          called again whenever the board learns a better time. 0: no
+ *          time known.
+ * @param   unix_seconds  The time now. */
+void ext4_clock_set(uint32_t unix_seconds);
+
+/**@brief   Counter of the seconds since boot (or any monotonic seconds),
+ *          e.g. a tick counter divided by its rate, that advances the time
+ *          of @ref ext4_clock_set. NULL removes it.
+ * @param   uptime  Seconds since an arbitrary start. */
+void ext4_clock_uptime_setup(uint32_t (*uptime)(void));
+
+/**@brief   The time the clock gives now, before the per mount point lower
+ *          bound: the callback of @ref ext4_clock_setup, else the time of
+ *          @ref ext4_clock_set advanced by the uptime counter, else
+ *          CONFIG_EXT4_CLOCK_MIN.
+ * @return  Unix seconds, 0 if unknown. */
+uint32_t ext4_clock_get(void);
+
 /**@brief   Setup OS lock routines.
  *
  * @param   mount_point Mount point.
