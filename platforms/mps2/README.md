@@ -12,7 +12,7 @@ exit status go through ARM semihosting to the host.
 | [mps2.ld](mps2.ld) | memory map: 4 MiB code at 0, 4 MiB RAM at 0x20000000 for data, heap and stack |
 | [disk.c](disk.c) | `platform_disk()`: a disk image file on the host, through semihosting, unbuffered; `cut=<n>` on the command line cuts the power at a block write. On a real board, your storage driver goes here |
 | [counter.c](counter.c) | `platform_counter()`: instructions, exact under QEMU's `-icount shift=0` (the benchmark's counter) |
-| [mps2.cmake](mps2.cmake) | `mps2_firmware(<target> <sources>)` and `${MPS2_RUNNER}` for CMake |
+| [mps2.cmake](mps2.cmake) | `platform_firmware(<target> <sources>)` and `${PLATFORM_RUNNER}` for CMake (through [platform.cmake](../platform.cmake)) |
 
 Firmware is built with a Cortex-M toolchain file and run in QEMU:
 

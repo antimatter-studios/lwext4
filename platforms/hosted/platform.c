@@ -7,7 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "check.h"
+#include "../platform.h"
 
 void platform_init(void)
 {

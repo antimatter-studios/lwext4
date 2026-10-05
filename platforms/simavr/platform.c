@@ -12,7 +12,7 @@
 #include <avr/sleep.h>
 #include <stdio.h>
 
-#include "check.h"
+#include "../platform.h"
 
 static int uart_putchar(char c, FILE *stream)
 {
