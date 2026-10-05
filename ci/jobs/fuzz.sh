@@ -9,7 +9,12 @@
 #   ci/run.sh fuzz run [seconds] [target]
 #                                      fuzz for a while (default 600 s per
 #                                      target), new crash inputs in
-#                                      build-ci/fuzz/art/
+#                                      build-ci/fuzz/art/, the full output
+#                                      in build-ci/fuzz/<target>.run.log
+#
+# The corpus a run grows is kept in build-ci/fuzz-corpus/<target>, outside
+# the build directory, so the next run continues from it (the scheduled
+# fuzzing of .github/workflows/fuzz.yml keeps it between nights).
 #
 # Targets: one per tests/fuzz/fuzz_<name>.c. Inputs: the seed corpus that
 # tests/fuzz/make-seeds.sh makes (reproducibly, with e2fsprogs) and
@@ -85,16 +90,24 @@ repro)
 run)
 	secs=${2:-600}
 	only=${3:-}
+	if [ -n "$only" ]; then
+		case "$targets " in
+		*" $only "*) ;;
+		*) echo "no target '$only'; targets:$targets" >&2; exit 2 ;;
+		esac
+	fi
 	mkdir -p "$b/art"
 	for t in $targets; do
 		[ -z "$only" ] || [ "$t" = "$only" ] || continue
-		mkdir -p "$b/corpus/$t"
-		echo "== $t: ${secs}s"
+		corpus=build-ci/fuzz-corpus/$t
+		mkdir -p "$corpus"
+		echo "== $t: ${secs}s, corpus of $(ls "$corpus" | wc -l) inputs"
 		"$b/$t" -max_total_time="$secs" -timeout=10 -rss_limit_mb=2048 \
 			-max_len=2400000 -artifact_prefix="$b/art/$t-" \
 			-dict=tests/fuzz/ext4.dict \
-			-print_final_stats=1 "$b/corpus/$t" "$b/seeds" \
-			"$b/crashes" 2>&1 | tail -n 40 || true
+			-print_final_stats=1 "$corpus" "$b/seeds" \
+			"$b/crashes" >"$b/$t.run.log" 2>&1 || true
+		tail -n 40 "$b/$t.run.log"
 	done
 	ls -l "$b/art"
 	[ -z "$(ls -A "$b/art")" ]
