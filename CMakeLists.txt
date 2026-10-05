@@ -130,6 +130,10 @@ elseif(LWEXT4_BUILD_TESTS AND
         OR CMAKE_SYSTEM_PROCESSOR MATCHES "^(atmega1284|msp430-sim)$"))
     enable_testing()
     add_subdirectory(tests/baremetal)
+    # The example firmware, run in QEMU like the test (platforms/mps2)
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "^cortex-m")
+        add_subdirectory(examples/firmware)
+    endif()
 endif()
 #Detect all possible warnings for lwext4 target
 if (NOT CMAKE_COMPILER_IS_GNUCC)

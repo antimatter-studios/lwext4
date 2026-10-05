@@ -3,8 +3,8 @@ Platforms
 
 The code that runs lwext4 on a board: start-up, linker script, console,
 exit, counter. [platform.h](platform.h) is the API each one implements;
-`tests/baremetal`, `tests/bench` and the example applications are written
-against it, so the board code an application starts from is the code CI
+`tests/baremetal`, `tests/bench` and the [example firmware](../examples/firmware/README.md)
+are written against it, so the board code an application starts from is the code CI
 runs on every pull request.
 
 | Platform | Boards | Runs in |
@@ -14,3 +14,10 @@ runs on every pull request.
 The other targets of `tests/baremetal` (ARM7TDMI under qemu-arm, AVR,
 MSP430) and the boards of `examples/baremetal-sdcard` still have their own
 code; they move here next (fork issue #169).
+
+| API ([platform.h](platform.h)) | |
+|---|---|
+| `platform_init()`, `platform_exit(status)` | console up; stop with a status |
+| `platform_disk()` | the storage, as an `ext4_blockdev` |
+| `platform_cmdline()` | how the machine was started (options for tests) |
+| `platform_counter()` | a counter to measure with |

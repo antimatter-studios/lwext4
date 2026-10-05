@@ -111,6 +111,7 @@ Each one is built and run by CI, and what it writes is checked with
 |---|---|---|
 | [basic](examples/basic/main.c) | PC | the whole life cycle, step by step: mkfs, mount, journal, cache, files and directories, unmount |
 | [blockdev-template](examples/blockdev-template/my_blockdev.c) | PC (RAM disk) | an annotated block device skeleton: the part you write for new hardware |
+| [firmware](examples/firmware/README.md) | Cortex-M0, M0+, M3, M4, M4F, M7, in QEMU | hello, a datalogger that survives power cuts, a read-only reader: the applications to start an MCU project from, on [platforms/mps2](platforms/mps2/README.md) |
 | [baremetal-sdcard](examples/baremetal-sdcard/README.md) | NUCLEO-F401RE, NUCLEO-G071RB, NUCLEO-L552ZE-Q, nRF52840 DK, in Renode | bare metal, micro SD card on SPI, no SDK or RTOS: MBR, mkfs, journal, power cuts |
 | [zephyr](examples/zephyr/README.md) | Zephyr on mps2/an385, in QEMU | lwext4 as a Zephyr module on the disk access API |
 | [esp-idf](https://github.com/antimatter-studios/lwext4/tree/main/examples/esp-idf) | ESP32, ESP32-C3, ESP32-S3, in Espressif's QEMU | an ESP-IDF component with SPI flash and SD card block devices |
@@ -289,7 +290,7 @@ with only docker.
 | Power loss | a power cut after every single block write of a workload, then journal replay and `e2fsck` | `readme-api` |
 | Linux architectures | x86_64, and under qemu-user aarch64, armhf, i686, mips, powerpc, ppc64le, riscv64, s390x (big endian); macOS; Windows under Wine | `qemu-user <arch>`, `mingw` |
 | Microcontrollers | [tests/baremetal](tests/baremetal) on Cortex-M0, M0+, M3, M4, M4F, M7 (QEMU), ARM7TDMI (qemu-arm), ATmega1284 (simavr), MSP430X (GDB simulator) | `cortex-m <cpu>`, `arm-sim`, `avr`, `msp430` |
-| Example firmware | the [examples](#examples) in Renode, QEMU and Espressif's QEMU | own workflows |
+| Example firmware | the [examples](#examples) in Renode, QEMU and Espressif's QEMU | `cortex-m <cpu>`, own workflows |
 | Fuzzing | libFuzzer targets for mount, read-write, I/O errors, partitions and mkfs; every crash input is replayed on every pull request, and the targets fuzz for 30 minutes each night ([tests/fuzz](tests/fuzz/README.md)) | `fuzz replay`, nightly: Fuzzing workflow |
 | Coverage | line and branch coverage may only go up | `coverage` |
 | Cost | instructions, block I/O, heap and stack per operation; more than 5 % worse fails | `bench` |
