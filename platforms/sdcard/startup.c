@@ -22,6 +22,8 @@ extern uint32_t _sidata, _sdata, _edata, _sbss, _ebss, _end, _estack;
 extern uint32_t __heap_limit, __ram_start, __stack_size;
 
 int main(void);
+/* platform.c (the platform API) reports main()'s status, when linked in */
+void platform_exit(int status) __attribute__((weak, noreturn));
 
 #define PAINT 0xa5a5a5a5u
 
@@ -109,7 +111,10 @@ __attribute__((noreturn)) void Reset_Handler(void)
 	/* ARMv8-M stack limit: overflowing the reservation faults (STKOF) */
 	__asm volatile("msr msplim, %0" ::"r"((uint32_t)&__heap_limit));
 #endif
-	main();
+	int status = main();
+
+	if (platform_exit)
+		platform_exit(status);
 	for (;;)
 		;
 }

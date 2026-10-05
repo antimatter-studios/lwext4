@@ -90,13 +90,14 @@ target_compile_definitions(${FW} PRIVATE
     BIG_FILE_KIB=${BIG_FILE_KIB}
     WRITE_BACK_CACHE=$<BOOL:${WRITE_BACK_CACHE}>)
 target_link_libraries(${FW} lwext4)
-target_link_options(${FW} PRIVATE
+set(BOARD_LINK_OPTIONS
     ${BOARD_CPU_FLAGS}
     --specs=nano.specs
     -nostartfiles
     -Wl,--gc-sections
     -Wl,-L${BOARD_DIR}
-    -T${SDCARD_DIR}/cortex-m.ld
+    -T${SDCARD_DIR}/cortex-m.ld)
+target_link_options(${FW} PRIVATE ${BOARD_LINK_OPTIONS}
     -Wl,-Map=${CMAKE_CURRENT_BINARY_DIR}/firmware.map
     -Wl,--print-memory-usage)
 set_target_properties(${FW} PROPERTIES LINK_DEPENDS
@@ -114,6 +115,32 @@ add_custom_command(TARGET ${FW} POST_BUILD
     BYPRODUCTS firmware.hex firmware.bin footprint.txt
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 
+# ---------------------------------------------------------------------------
+# The example applications of examples/firmware on this board, on the
+# platform API (platforms/platform.h) of platforms/sdcard: <app>.hex each
+# ---------------------------------------------------------------------------
+set(APPS hello datalogger reader)
+foreach(app ${APPS})
+    add_executable(${app}.elf
+        ${LWEXT4_DIR}/examples/firmware/${app}.c
+        ${SDCARD_DIR}/platform.c
+        ${SDCARD_DIR}/sd_spi.c
+        ${SDCARD_DIR}/startup.c
+        ${BOARD_DIR}/board.c)
+    target_include_directories(${app}.elf PRIVATE
+        ${SDCARD_DIR} ${LWEXT4_DIR}/platforms)
+    target_compile_options(${app}.elf PRIVATE ${COMMON_FLAGS} -Wall -Wextra)
+    target_link_libraries(${app}.elf lwext4)
+    target_link_options(${app}.elf PRIVATE ${BOARD_LINK_OPTIONS}
+        -Wl,-Map=${CMAKE_CURRENT_BINARY_DIR}/${app}.map)
+    set_target_properties(${app}.elf PROPERTIES LINK_DEPENDS
+        "${SDCARD_DIR}/cortex-m.ld;${BOARD_DIR}/memory.ld")
+    add_custom_command(TARGET ${app}.elf POST_BUILD
+        COMMAND ${OBJCOPY} -O ihex ${app}.elf ${app}.hex
+        BYPRODUCTS ${app}.hex
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+endforeach()
+
 # Board description for the Renode test harness (tests/renode/run.sh).
 file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/board.env
     "BOARD=${BOARD}\n"
@@ -123,4 +150,6 @@ file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/board.env
     "BIG_FILE_KIB=${BIG_FILE_KIB}\n"
     "BOARD_TEST_EXCLUDE=\"${BOARD_TEST_EXCLUDE}\"\n"
     "FIRMWARE=${CMAKE_CURRENT_BINARY_DIR}/firmware.hex\n"
-    "ELF=${CMAKE_CURRENT_BINARY_DIR}/${FW}\n")
+    "ELF=${CMAKE_CURRENT_BINARY_DIR}/${FW}\n"
+    "APPS=\"${APPS}\"\n"
+    "APP_DIR=${CMAKE_CURRENT_BINARY_DIR}\n")

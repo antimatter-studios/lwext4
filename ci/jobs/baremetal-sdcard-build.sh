@@ -12,6 +12,10 @@
 #   lwext4-example-<board>.bin   raw image, write at the start of the flash
 #   lwext4-example-<board>.elf   with symbols, for gdb
 #   footprint.txt                flash/RAM use per component
+#   apps/<app>.hex, apps/<app>.elf
+#                                the example applications of
+#                                examples/firmware (hello, datalogger,
+#                                reader) for the board
 board=${1:?usage: baremetal-sdcard-build.sh <board> [cmake options]}
 shift
 . ci/scripts/common.sh
@@ -30,6 +34,10 @@ for ext in hex bin elf; do
 	cp "$build/firmware.$ext" "$dist/lwext4-example-$board.$ext"
 done
 cp "$build/footprint.txt" "$dist/"
+mkdir -p "$dist/apps"
+for app in hello datalogger reader; do
+	cp "$build/$app.hex" "$build/$app.elf" "$dist/apps/"
+done
 
 echo
 arm-none-eabi-gcc --version | head -n 1
