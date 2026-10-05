@@ -1,12 +1,12 @@
 #!/bin/sh
 # SPDX-License-Identifier: BSD-3-Clause
 #
-# README.md Cortex-M claims, after the "Build cortex-m0/m3/m4 library"
-# blocks have run (ci/jobs/readme-arm-none-eabi.sh):
+# README.md Cortex-M claims, after "Build for a microcontroller" has built
+# cortex-m0, cortex-m3 and cortex-m4 (ci/jobs/readme-arm-none-eabi.sh):
 #  - each build produced an ARM Thumb liblwext4.a for its CPU,
 #  - "Memory footprint" .text sizes for cortex-m4 (ext2 only / full ext4),
-#  - "The Cortex-M toolchains also build tests/baremetal ... ctest runs it
-#    on a QEMU MPS2 board".
+#  - "The microcontroller toolchains also build tests/baremetal, a test
+#    firmware that ctest runs in an emulator".
 set -eu
 . "$(dirname "$0")/lib.sh"
 
@@ -58,9 +58,11 @@ ext2_kib=$(text_kib "$WORK"/ext2/*.o)
 log "full ext4 feature set, no debug output: ${full_kib} KiB"
 log "ext2 only (no journal, extents, xattr), no debug output: ${ext2_kib} KiB"
 
+# Within 10%: tight enough that the README's numbers are updated when the
+# library grows (25% let them drift from 48/65 to 60/78 KiB, fork #190)
 within()
 {
-	[ $(($1 * 100)) -ge $(($2 * 75)) ] && [ $(($1 * 100)) -le $(($2 * 125)) ]
+	[ $(($1 * 100)) -ge $(($2 * 90)) ] && [ $(($1 * 100)) -le $(($2 * 110)) ]
 }
 
 step "RAM footprint on QEMU mps2-an386 (README: RAM and .stack)"
@@ -122,7 +124,7 @@ pass "stack use ($ext2_stack / $ext4_stack bytes) within README.md's ${readme_st
 
 step "Memory footprint vs. README.md"
 # README.md states the numbers in its "Memory footprint" section; they have
-# to be within 25% of what is measured.
+# to be within 10% of what is measured.
 readme_ext2=$(sed -n 's/^\* \.text: *\([0-9]*\)KB - only ext2 fs support.*/\1/p' README.md)
 readme_full=$(sed -n 's/^\* \.text: .*, *\([0-9]*\)KB - full ext4 fs feature set.*/\1/p' README.md)
 [ -n "$readme_ext2" ] && [ -n "$readme_full" ] ||

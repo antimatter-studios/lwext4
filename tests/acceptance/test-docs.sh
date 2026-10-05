@@ -9,7 +9,8 @@
 #  - the files and directories README.md's "Project tree" lists exist,
 #  - every Makefile target README.md mentions exists,
 #  - every example in examples/ is linked from README.md's "Getting
-#    started" and from examples/README.md.
+#    started" and from examples/README.md,
+#  - every job README.md's "How it is tested" names exists.
 set -eu
 . "$(dirname "$0")/lib.sh"
 
@@ -94,6 +95,19 @@ for dir in "$TOP_DIR"/examples/*/; do
 		die "examples/README.md does not link $name"
 	pass "examples/$name is linked from README.md's Getting started and examples/README.md"
 done
+
+step "jobs of README.md's \"How it is tested\""
+# The last column of its table names the jobs (`job [arg]`) that test each
+# row; each has to be a job of ci/jobs.
+sed -n '/^How it is tested$/,/^Project tree$/p' "$TOP_DIR/README.md" |
+	sed -n 's/^|.*| \([^|]*\) |$/\1/p' | grep -o '`[^`]*`' | tr -d '`' |
+	awk '{ print $1 }' | sort -u >"$WORK/tested-jobs.txt"
+[ -s "$WORK/tested-jobs.txt" ] || die "no jobs found in README.md's How it is tested"
+while read -r job; do
+	[ -f "$TOP_DIR/ci/jobs/$job.sh" ] ||
+		die "README.md's How it is tested names '$job', there is no ci/jobs/$job.sh"
+	pass "How it is tested: job $job exists"
+done <"$WORK/tested-jobs.txt"
 
 step "ci/run.sh jobs named in README.md"
 # README.md shows "ci/run.sh <job> [arg]"; the job has to exist and be one
