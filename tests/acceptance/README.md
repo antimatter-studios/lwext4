@@ -77,10 +77,7 @@ been corrected; **n/a** = cannot be verified in CI, reason given.
 | `readme:using-lwext4-mkfs-tool#3` | `-e 3` creates ext3 | readme-native: journal, no extents | pass |
 | `readme:using-lwext4-mkfs-tool#4` | `-e 4` creates ext4 | readme-native, readme-debian: journal and extents, e2fsck clean | pass |
 | `readme:using-lwext4-mkfs-tool#5` | `lwext4-mkfs --help` shows the full option set | readme-native, test-tools.sh | fixed (exited 1) |
-| `readme:build-avrxmega7-library#1` | `make avrxmega7; cd build_avrxmega7; make lwext4` | readme-avr: AVR liblwext4.a | pass |
-| `readme:build-cortex-m0-library#1` | `make cortex-m0 ...` | readme-arm-none-eabi: ARM liblwext4.a | pass |
-| `readme:build-cortex-m3-library#1` | `make cortex-m3 ...` | readme-arm-none-eabi | pass |
-| `readme:build-cortex-m4-library#1` | `make cortex-m4 ...` | readme-arm-none-eabi | pass |
+| `readme:build-for-a-microcontroller#1` | `make cortex-m4; cd build_cortex-m4; make lwext4`, and the same for every toolchain of its table | readme-arm-none-eabi: the block as is, then the same commands for cortex-m0 and cortex-m3: ARM liblwext4.a for each; readme-avr: the same commands for avrxmega7: AVR liblwext4.a. ci.yml builds and tests every other toolchain of the table | doc (replaces one section per CPU) |
 
 ### Statements
 
@@ -97,7 +94,7 @@ been corrected; **n/a** = cannot be verified in CI, reason given.
 | multiple configurations (ext2/ext3/ext4) (Features) | test-features.sh on ext2, ext3, ext4 images; test-cortex-m.sh builds an ext2 only configuration | fixed (CONFIG_XATTR_ENABLE=0 did not link) |
 | only C standard library dependency (Features) | test-build.sh: undefined symbols of liblwext4.a (lib_only) are C library functions only | pass |
 | various CPU architectures (Features) | readme-cross-linux, readme-arm-none-eabi, readme-avr; ci.yml covers more | pass |
-| Memory footprint: cortex-m4 .text, RAM, stack | test-cortex-m.sh measures .text of ext2 only and full builds, and peak heap + static data + stack of a workload on QEMU mps2-an386 (footprint.c); README.md's numbers must be within 25% | doc (README said 20/50 KB .text and 8/12 KB .data; measured 48/65 KiB .text, 13/19 KiB RAM, <1 KiB stack) |
+| Memory footprint: cortex-m4 .text, RAM, stack | test-cortex-m.sh measures .text of ext2 only and full builds, and peak heap + static data + stack of a workload on QEMU mps2-an386 (footprint.c); README.md's numbers must be within 10% | doc (README said 20/50 KB .text and 8/12 KB .data; measured 48/65 KiB .text, 13/19 KiB RAM, <1 KiB stack. #190: 48/65 had drifted to 60/78 KiB inside the old 25% tolerance) |
 | block cache should not allocate more than CONFIG_BLOCK_DEV_CACHE_SIZE | test-features.sh (`cache_check` after every workload), test-tools.sh (`--bstat`) | pass |
 | Supported features, incompatible **yes** (filetype, recover, meta_bg, extents, 64bit, flex_bg) | test-features.sh: images with each feature (and without), written by lwext4, e2fsck clean, debugfs reads back; recover: test-journal.sh | fixed (see above) |
 | Supported features, compatible **yes** (has_journal, ext_attr, dir_index) | test-features.sh (xattrs set/get/list/remove both ways) | fixed (removing an in-inode xattr corrupted memory) |
@@ -117,7 +114,9 @@ been corrected; **n/a** = cannot be verified in CI, reason given.
 | Makefile targets lib_only and the LWEXT4_BUILD_SHARED_LIB option | test-build.sh | fixed, fix/shared-lib-size (shared library build failed on the size step) |
 | include/ext4.h: mount, recover, journal_start/stop, umount usage | test-features.sh, test-journal.sh follow exactly this sequence; ext4_journal_start/stop on ext2 (no journal) succeed | pass |
 | include/ext4.h: write-through by default, write back "data is NOT flushed", nested enable/disable, ext4_cache_flush | test-journal.sh: block write counters and power loss | doc (file data written by ext4_fwrite is never cached; the comment now says so) |
-| The Cortex-M toolchains also build tests/baremetal, ctest runs it on QEMU (Run regression tests) | test-cortex-m.sh | pass |
+| The microcontroller toolchains also build tests/baremetal, ctest runs it in an emulator (Run regression tests; Build for a microcontroller table) | test-cortex-m.sh (Cortex-M on QEMU); ci.yml jobs cortex-m, arm-sim, avr, msp430 | pass |
+| extended attributes, POSIX ACLs kept as xattrs (Features) | test-features.sh (xattrs set/get/list/remove both ways); test_xattr_acl_name (CTest): both ACL attributes set, read, replaced, listed, removed, in the inode and in the xattr block | pass |
+| How it is tested: each row's jobs | test-docs.sh: every job the table names is a ci/jobs job; the rows describe those jobs (ci/jobs headers) | pass |
 
 ## Findings
 

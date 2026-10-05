@@ -1,37 +1,16 @@
-> **This is antimatter-studios/lwext4, a maintained fork of
-> [gkostka/lwext4](https://github.com/gkostka/lwext4).**
+> **antimatter-studios/lwext4**: the maintained fork of
+> [gkostka/lwext4](https://github.com/gkostka/lwext4), which has merged
+> nothing since 2022. Development, issues and releases are here
+> ([CONTRIBUTING.md](CONTRIBUTING.md)).
 >
-> - **Relation to upstream.** Development happens here: bugs and work are
->   tracked in this repository's issues, fixes are pull requests into
->   `main`, and `main` is what the releases are built from (see
->   [CONTRIBUTING.md](CONTRIBUTING.md)). Upstream has not merged anything
->   since 2022; the changes up to v1.0.1-am.3 are also open upstream pull
->   requests. Every fix carries a regression test that CI proves fails
->   without the fix and passes with it (`ci/run.sh red-green`).
-> - **Documentation:** the [project site](https://antimatter-studios.github.io/lwext4/)
->   is generated from this repository on every merge to `main`: this
->   README, the API reference, the build options, every regression test
->   and fuzzer crash input with its issue, and the CI jobs
->   (`ci/run.sh pages` builds it locally).
-> - **Releases** are tagged on `main` as `v<next upstream
->   patch>-am.<n>`, e.g. `v1.0.1-am.4`: a valid SemVer pre-release that sorts
->   after upstream `v1.0.0`, before a future upstream `v1.0.1`, and counts
->   our builds with `am.<n>`. A tag runs the whole CI matrix, builds the
->   packages (Linux x86_64/arm64/armhf/i686/riscv64/ppc64le/s390x/powerpc/
->   mips, Windows x86_64, Cortex-M; example firmware for ESP32/ESP32-C3/
->   ESP32-S3, the bare-metal SD card boards and Zephyr on mps2/an385) and
->   publishes them, with test results
->   and a manifest of the changes since the previous release, only if every
->   job passed.
-> - **Licensing** is unchanged: the library is BSD-3-Clause
->   ([LICENSE](LICENSE)) except `src/ext4_extent.c` and `src/ext4_xattr.c`,
->   which are GPL-2.0 (see their headers). New files take the licence of
->   the code they build on: tests, CI scripts, Dockerfiles and glue are
->   BSD-3-Clause (`SPDX-License-Identifier: BSD-3-Clause`).
-> - **Reproducing CI locally** needs only docker: every CI job runs in a
->   container defined in [`ci/`](ci/README.md), e.g.
->   `ci/run.sh --list`, `ci/run.sh native asan-ubsan`,
->   `ci/run.sh qemu-user s390x`, `ci/run.sh avr`.
+> - **Docs:** the [project site](https://antimatter-studios.github.io/lwext4/):
+>   this README, the API reference, the build options, every regression
+>   test and fuzzer crash input with its issue, the CI jobs, benchmarks.
+> - **Releases:** `v1.0.1-am.<n>` tags on `main`. A tag runs the whole CI
+>   matrix and publishes, only if every job passes: libraries for Linux
+>   (9 architectures), Windows and Cortex-M, the example firmware, test
+>   results and the list of changes.
+> - **Requests, bugs, questions:** [open an issue](https://github.com/antimatter-studios/lwext4/issues).
 
 [![CI](https://github.com/antimatter-studios/lwext4/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/antimatter-studios/lwext4/actions/workflows/ci.yml?query=branch%3Amain)
 [![Release](https://img.shields.io/github/v/release/antimatter-studios/lwext4?include_prereleases)](https://github.com/antimatter-studios/lwext4/releases)
@@ -42,51 +21,42 @@
 About
 =====
 
+ext2/3/4 for microcontrollers, an alternative to the usual FAT libraries:
 
-The main goal of the lwext4 project is to provide ext2/3/4 filesystem for microcontrollers. It may be an interesting alternative for traditional MCU filesystem libraries (mostly based on FAT32). Library has some cool and unique features in microcontrollers world:
- - directory indexing - fast file find and list operations
- - extents - fast big file truncate
- - journaling transactions & recovery - power loss resistance
+- directory indexing - fast file find and list operations
+- extents - fast big file truncate
+- journaling transactions & recovery - power loss resistance
 
-Lwext4 is an excellent choice for SD/MMC card, USB flash drive or any other wear
-leveled memory types. However it is not good for raw flash devices.
-
-Feel free to contact me:
-kostka.grzegorz@gmail.com
+For SD/MMC cards, USB flash drives and other wear levelled storage; not
+for raw flash.
 
 Getting started
 =====
 
 lwext4 is a library: your program registers a *block device* (a struct
-with read/write callbacks for your storage), formats or mounts it, and then
+with read/write callbacks for your storage), formats or mounts it, and
 uses a file API much like stdio. Everything below runs on a PC first.
 
-1. Build the library, the tools and the examples (see [Compile](#compile)
-   for the dependencies):
+1. Build the library, the tools and the examples ([dependencies](#compile)):
    ```bash
-    make generic
-    cd build_generic
-    make
-    ```
+   make generic
+   cd build_generic
+   make
+   ```
 2. Run the basic example and check its result with e2fsprogs:
    ```bash
-    ./examples/lwext4-example-basic disk.img
-    e2fsck -fn disk.img
-    debugfs -R 'ls -l /docs' disk.img
-    ```
-   [examples/basic/main.c](examples/basic/main.c) walks through the whole
-   life cycle step by step: block device, `ext4_mkfs`, mount, journal,
-   write-back cache, directories and files, unmount.
-3. Port it to your hardware by writing a block device:
-   [examples/blockdev-template](examples/blockdev-template/my_blockdev.c)
-   is an annotated skeleton that CI runs on a RAM disk.
-4. Pick the features and buffer sizes you need with the `CONFIG_*`
-   options of [include/ext4_config.h](include/ext4_config.h) and build for
-   your target with a toolchain file from [toolchain/](toolchain), e.g.
-   `make cortex-m4`.
+   ./examples/lwext4-example-basic disk.img
+   e2fsck -fn disk.img
+   debugfs -R 'ls -l /docs' disk.img
+   ```
+3. Port it to your hardware: write a block device, starting from
+   [examples/blockdev-template](examples/blockdev-template/my_blockdev.c).
+4. Pick features and buffer sizes with the `CONFIG_*` options of
+   [include/ext4_config.h](include/ext4_config.h), and build for your
+   target ([Build for a microcontroller](#build-for-a-microcontroller)).
 
-The core of a program, as a function (CI compiles this snippet, like every
-C snippet in this file):
+The core of a program (CI compiles this snippet, like every C snippet in
+this file):
 ```c
 #include <ext4.h>
 #include <ext4_mkfs.h>
@@ -131,58 +101,29 @@ int format_and_write(const char *image)
 }
 ```
 
-More examples:
-* [examples/](examples/README.md) - the host examples above and how to
-  check what they write.
-* ESP32, ESP32-C3 and ESP32-S3 (ESP-IDF): an lwext4 component with block
-  devices for SPI flash partitions and SD cards, and an example firmware
-  that CI runs in Espressif's QEMU:
-  [examples/esp-idf in antimatter-studios/lwext4](https://github.com/antimatter-studios/lwext4/tree/main/examples/esp-idf).
-* Bare metal on microcontroller boards (ST NUCLEO-F401RE, NUCLEO-G071RB,
-  NUCLEO-L552ZE-Q, Nordic nRF52840 DK) with a micro SD card on SPI, no
-  vendor SDK or RTOS: a firmware that CI runs on the emulated boards in
-  Renode, power cuts included:
-  [examples/baremetal-sdcard](examples/baremetal-sdcard/README.md).
-* Zephyr RTOS: lwext4 as a Zephyr module with a block device on Zephyr's
-  disk access API, and an example application that CI runs in QEMU on a
-  Cortex-M3 board with a RAM disk:
-  [examples/zephyr](examples/zephyr/README.md).
-* [fs_test/](fs_test) - the `lwext4-generic`, `lwext4-mkfs` and
-  `lwext4-mbr` tools (see below) are complete programs too.
+Examples
+-----
 
-Credits
-=====
+Each one is built and run by CI, and what it writes is checked with
+`e2fsck -fn` and `debugfs` ([examples/](examples/README.md)).
 
-The most of the source code of lwext4 was taken from HelenOS:
-* http://helenos.org/
+| Example | Runs on | What it shows |
+|---|---|---|
+| [basic](examples/basic/main.c) | PC | the whole life cycle, step by step: mkfs, mount, journal, cache, files and directories, unmount |
+| [blockdev-template](examples/blockdev-template/my_blockdev.c) | PC (RAM disk) | an annotated block device skeleton: the part you write for new hardware |
+| [baremetal-sdcard](examples/baremetal-sdcard/README.md) | NUCLEO-F401RE, NUCLEO-G071RB, NUCLEO-L552ZE-Q, nRF52840 DK, in Renode | bare metal, micro SD card on SPI, no SDK or RTOS: MBR, mkfs, journal, power cuts |
+| [zephyr](examples/zephyr/README.md) | Zephyr on mps2/an385, in QEMU | lwext4 as a Zephyr module on the disk access API |
+| [esp-idf](https://github.com/antimatter-studios/lwext4/tree/main/examples/esp-idf) | ESP32, ESP32-C3, ESP32-S3, in Espressif's QEMU | an ESP-IDF component with SPI flash and SD card block devices |
 
-Some features are based on FreeBSD and Linux implementations.
-
-KaHo Ng (https://github.com/ngkaho1234):
-* advanced extents implementation
-* xattr support
-* metadata checksum support
-* journal recovery & transactions
-* many bugfixes & improvements
-
-Lwext4 could be used also as fuse internals. Here is a nice project which uses lwext4 as a filesystem base:
-* https://github.com/ngkaho1234/fuse-lwext4
-
-Some of the source files are licensed under GPLv2. It makes whole
-lwext4 GPLv2 licensed. To use library as a BSD3, GPLv2 licensed source
-files must be removed first. At this point there are two files
-licensed under GPLv2:
-* ext4_xattr.c
-* ext4_extent.c
-
-All other modules and headers are BSD-3-Clause licensed code.
-
+The tools of [fs_test/](fs_test) (`lwext4-generic`, `lwext4-mkfs`,
+`lwext4-mbr`) are complete programs too.
 
 Features
 =====
 
 * filetypes: regular, directories, softlinks
 * support for hardlinks
+* extended attributes (POSIX ACLs are kept as xattrs)
 * timestamps from whatever clock the board has: a real-time clock, a start
   date advanced by an uptime counter, or, with no clock at all, the newest
   time stored on the filesystem (`ext4_clock_setup` in `ext4.h`)
@@ -199,19 +140,17 @@ Features
 Memory footprint
 ------------
 
-Advanced ext4 filesystem features, like extents or journaling require some memory. 
-However most of the memory expensive features could be disabled at compile time.
-Here is a brief summary for cortex-m4 processor (arm-none-eabi-gcc 14, -O2,
-debug output disabled; measured by tests/acceptance/test-cortex-m.sh):
+The memory hungry features (journal, extents, xattrs) can be left out at
+compile time. Cortex-M4, arm-none-eabi-gcc 14, -O2, debug output off
+(measured by tests/acceptance/test-cortex-m.sh):
 
-* .text:  48KB - only ext2 fs support , 65KB - full ext4 fs feature set
+* .text:  60KB - only ext2 fs support , 78KB - full ext4 fs feature set
 * RAM:    15KB - minimum 8 x 1KB  block cache (10KB heap, 5KB static data), 24KB - when journaling and extents are enabled
 * .stack: 2KB - is enough (about 1KB measured)
 
-Per operation, measured on every pull request on emulated Cortex-M boards
-(all features, without debug output and assertions; details and how they are
-measured in [docs/performance](docs/performance/README.md); generated by
-`ci/run.sh bench update`, do not edit):
+Per operation, on emulated Cortex-M boards, measured on every pull request
+([how](docs/performance/README.md); generated by `ci/run.sh bench update`,
+do not edit):
 
 <!-- bench-table: begin (tests/bench/table.py) -->
 | | cortex-m0 | cortex-m3 | cortex-m4 | cortex-m7 |
@@ -235,21 +174,14 @@ measured in [docs/performance](docs/performance/README.md); generated by
 | umount | 0 | 3 | 8 k | 5 k | 5 k | 5 k |
 <!-- bench-table: end -->
 
-Blocks are allocated dynamically. Previous versions of library could work without
-malloc but from 1.0.0 dynamic memory allocation is required. However, block cache
-should not allocate more than CONFIG_BLOCK_DEV_CACHE_SIZE blocks.
-
-With `CONFIG_USE_USER_MALLOC=1` the library calls `ext4_user_malloc`,
-`ext4_user_calloc`, `ext4_user_realloc` and `ext4_user_free` instead, e.g.
-to give it a fixed pool. `tests/test_memory.c` records every allocation of
-typical workloads (mkfs, mount, small and large files, a 1500 entry
-directory, xattrs, mixed churn), checks for leaks and replays them through a
-simple first-fit allocator on a fixed area, as a microcontroller heap. With
-16 block cache buffers the busiest workload needs a 24KB heap with 1KB
-blocks and 87KB with 4KB blocks; first-fit fragmentation costs up to 6%
-(1KB blocks) and 17% (4KB blocks, on 32-bit x86) over the peak. The test fails if
-a workload leaks or needs more than the ceilings in
-`tests/test_memory_budget.h`.
+The library allocates its blocks with `malloc`, never more than
+`CONFIG_BLOCK_DEV_CACHE_SIZE` cache blocks. `CONFIG_USE_USER_MALLOC=1`
+calls `ext4_user_malloc`, `_calloc`, `_realloc` and `_free` instead, e.g.
+for a fixed pool. `tests/test_memory.c` replays the allocations of
+typical workloads through a first-fit allocator on a fixed area, as a
+microcontroller heap, and fails on a leak or above the ceilings of
+`tests/test_memory_budget.h`: with 16 cache buffers the busiest workload
+needs a 24KB heap with 1KB blocks, 87KB with 4KB blocks.
 
 Supported ext2/3/4 features
 =====
@@ -342,243 +274,232 @@ incompatible one refuses it. The feature level of the build
 narrows the list (an ext2 build has no journal, extents or checksums);
 the tables are checked with the default, ext4.
 
+How it is tested
+=====
+
+On every pull request, and nothing is allowed to fail. Every job runs in a
+container of [ci/](ci/README.md), so `ci/run.sh <job>` runs it locally
+with only docker.
+
+| What | How | Job |
+|---|---|---|
+| Regression tests | the CTest suite in [tests/](tests); every fixed bug has a test, which must fail without the fix and pass with it | `native`, `red-green` |
+| Sanitizers | gcc and clang with ASan + UBSan, TSan | `native asan-ubsan` |
+| e2fsprogs as the oracle | what lwext4 writes must pass `e2fsck -fn` and read back with `debugfs`, and the reverse; every claim of this README is checked ([tests/acceptance](tests/acceptance/README.md)) | README acceptance |
+| Power loss | a power cut after every single block write of a workload, then journal replay and `e2fsck` | `readme-api` |
+| Linux architectures | x86_64, and under qemu-user aarch64, armhf, i686, mips, powerpc, ppc64le, riscv64, s390x (big endian); macOS; Windows under Wine | `qemu-user <arch>`, `mingw` |
+| Microcontrollers | [tests/baremetal](tests/baremetal) on Cortex-M0, M0+, M3, M4, M4F, M7 (QEMU), ARM7TDMI (qemu-arm), ATmega1284 (simavr), MSP430X (GDB simulator) | `cortex-m <cpu>`, `arm-sim`, `avr`, `msp430` |
+| Example firmware | the [examples](#examples) in Renode, QEMU and Espressif's QEMU | own workflows |
+| Fuzzing | libFuzzer targets for mount, read-write, I/O errors, partitions and mkfs; every crash input is replayed on every pull request, and the targets fuzz for 30 minutes each night ([tests/fuzz](tests/fuzz/README.md)) | `fuzz replay`, nightly: Fuzzing workflow |
+| Coverage | line and branch coverage may only go up | `coverage` |
+| Cost | instructions, block I/O, heap and stack per operation; more than 5 % worse fails | `bench` |
+| Embedded budget | the C library functions the Cortex-M0 build calls, and its largest stack frame | `embedded-budget` |
+
 Project tree
 =====
-*  blockdev         - block devices set, supported blockdev
-*  examples         - example programs (see [Getting started](#getting-started))
-*  fs_test          - test suite, mkfs and demo application
+*  blockdev         - block devices: image files, Linux and Windows devices
+*  examples         - example programs and firmware (see [Examples](#examples))
+*  fs_test          - the lwext4-generic, lwext4-mkfs and lwext4-mbr tools, and the client/server test suite
 *  src              - source files
 *  include          - header files
+*  ports            - glue for RTOSes and SDKs (Zephyr)
+*  tests            - regression tests, acceptance tests, fuzzing, benchmark, test firmware
 *  toolchain        - cmake toolchain files
+*  ci               - CI jobs and their containers (see [ci/README.md](ci/README.md))
+*  docs             - the project site and the benchmark data
 *  CMakeLists.txt   - CMake config file
 *  fs_test.mk       - automatic tests definitions
 *  Makefile         - helper makefile to generate cmake and run test suite
-*  README.md       - readme file
-  
+*  README.md        - readme file
+
 Compile
 =====
 Dependencies
 ------------
-* Windows 
-
-Download MSYS-2:  https://sourceforge.net/projects/msys2/
-
-Install required packages is MSYS2 Shell package manager:
+* Windows: [MSYS2](https://www.msys2.org/), then in its shell:
 ```bash
- pacman -S make gcc cmake
-  ```
-  
-* Linux 
-
-Package installation (Debian):
+pacman -S make gcc cmake
+```
+* Linux (Debian):
 ```bash
- apt-get install make gcc cmake
-  ```
- 
+apt-get install make gcc cmake
+```
+
 Compile & install tools
 ------------
 ```bash
- make generic
- cd build_generic
- make
- sudo make install
- ```
+make generic
+cd build_generic
+make
+sudo make install
+```
 
-Installation goes to /usr/local by default. To install somewhere else, pick
-the prefix at install time or when configuring:
+Installation goes to /usr/local by default. Another prefix, at install
+time or when configuring:
 ```bash
- cmake --install build_generic --prefix $HOME/.local
- cmake -DCMAKE_INSTALL_PREFIX=$HOME/.local build_generic
- ```
+cmake --install build_generic --prefix $HOME/.local
+cmake -DCMAKE_INSTALL_PREFIX=$HOME/.local build_generic
+```
 
 Using the installed library
 ------------
-`make install` puts the library, the file block device library and their
-headers below the prefix, together with a pkg-config file and a CMake
-package:
+`make install` installs the library, the file block device library, their
+headers, a pkg-config file and a CMake package:
 ```
- include/lwext4/                 ext4.h, ext4_mkfs.h, ... generated/ext4_config.h
- include/lwext4/blockdev/        blockdev.h, file_dev.h (file_windows.h on Windows)
- lib/liblwext4.a                 the library (liblwext4.so with -DLWEXT4_BUILD_SHARED_LIB=ON)
- lib/libblockdev.a               file_dev_get(): an image file or device as ext4_blockdev
- lib/pkgconfig/lwext4.pc
- lib/cmake/lwext4/               lwext4Config.cmake, lwext4ConfigVersion.cmake, targets
- ```
-Both package files find the prefix relative to their own location, so an
-install tree can be moved or unpacked elsewhere. A program includes
-`<ext4.h>` (and `<blockdev/file_dev.h>` for the file block device) and is
-built with any of:
+include/lwext4/                 ext4.h, ext4_mkfs.h, ... generated/ext4_config.h
+include/lwext4/blockdev/        blockdev.h, file_dev.h (file_windows.h on Windows)
+lib/liblwext4.a                 the library (liblwext4.so with -DLWEXT4_BUILD_SHARED_LIB=ON)
+lib/libblockdev.a               file_dev_get(): an image file or device as ext4_blockdev
+lib/pkgconfig/lwext4.pc
+lib/cmake/lwext4/               lwext4Config.cmake, lwext4ConfigVersion.cmake, targets
+```
+Both find the prefix relative to their own location, so an install tree
+can be moved. A program includes `<ext4.h>` (and `<blockdev/file_dev.h>`)
+and is built with any of:
 ```bash
- cc app.c $(pkg-config --cflags --libs lwext4)
- cc app.c -I$PREFIX/include/lwext4 -L$PREFIX/lib -lblockdev -llwext4
- ```
+cc app.c $(pkg-config --cflags --libs lwext4)
+cc app.c -I$PREFIX/include/lwext4 -L$PREFIX/lib -lblockdev -llwext4
+```
 ```cmake
- find_package(lwext4 1.0 CONFIG REQUIRED)
- target_link_libraries(app lwext4::blockdev lwext4::lwext4)
- ```
-(set `PKG_CONFIG_PATH=$PREFIX/lib/pkgconfig` or
-`CMAKE_PREFIX_PATH=$PREFIX` for a prefix outside the default search path).
-The `install_package` CTest test builds and runs such a program in all
-three ways; `tests/package/` is a complete example.
+find_package(lwext4 1.0 CONFIG REQUIRED)
+target_link_libraries(app lwext4::blockdev lwext4::lwext4)
+```
+(with `PKG_CONFIG_PATH=$PREFIX/lib/pkgconfig` or `CMAKE_PREFIX_PATH=$PREFIX`
+for a prefix outside the default search path). The `install_package` CTest
+test builds and runs such a program all three ways; `tests/package/` is a
+complete example.
+
+Build for a microcontroller
+=====
+
+`make <toolchain>` configures `build_<toolchain>` with
+`toolchain/<toolchain>.cmake`; `make lwext4` there builds the library:
+```bash
+make cortex-m4
+cd build_cortex-m4
+make lwext4
+```
+
+| Toolchain (`make ...`) | Compiler | Tested |
+|---|---|---|
+| `cortex-m0`, `cortex-m0+`, `cortex-m3`, `cortex-m4`, `cortex-m4f`, `cortex-m7` | arm-none-eabi-gcc | tests/baremetal on QEMU MPS2 boards |
+| `arm-sim` | arm-none-eabi-gcc | tests/baremetal on qemu-arm (ARM7TDMI) |
+| `avrxmega7` | avr-gcc | compiled only (simavr has no XMEGA; ATmega1284 runs the tests) |
+| `msp430` | msp430-elf-gcc or msp430-gcc | compiled only (MSP430G2210; MSP430X large model runs the tests) |
+| `mingw` | MinGW-w64 | CTest suite under Wine |
+| `generic` | the host's | all of [How it is tested](#how-it-is-tested) |
+
+Other Linux architectures use `toolchain/linux-cross.cmake` (see [Run
+regression tests](#run-regression-tests)). The byte order comes from the
+compiler; `CONFIG_BIG_ENDIAN` (1 or 0) overrides it for compilers that
+do not say, and contradicting the compiler is a build error.
 
 lwext4-generic demo application
 =====
-Simple lwext4 library test application:
-* load ext2/3/4 images
-* load linux block device with ext2/3/4 part
-* load windows volume with ext2/3/4 filesystem 
-* directory speed test
-* file write/read speed test
-
-How to use for images/blockdevices (`make test` or `make images_small`
-creates the ext_images directory):
+Mounts ext2/3/4 images, Linux block devices or Windows volumes, and runs
+directory and file read/write speed tests.
+`make test` or `make images_small` creates the ext_images directory:
 ```bash
- lwext4-generic -i ext_images/ext2 
- lwext4-generic -i ext_images/ext3 
- lwext4-generic -i ext_images/ext4 
- ```
- 
-Show full option set:
+lwext4-generic -i ext_images/ext2
+lwext4-generic -i ext_images/ext3
+lwext4-generic -i ext_images/ext4
+```
+All options:
 ```bash
- lwext4-generic --help
-   ```
+lwext4-generic --help
+```
 
 Run automatic tests
 =====
 
-The tests create their ext2/3/4 images with `mke2fs` (e2fsprogs), no root
-access is needed.
-
-Execute tests for autogenerated 128MB images:
+The client/server suite of fs_test, on images it makes with `mke2fs`
+(e2fsprogs), no root needed. 128MB images:
 ```bash
- make test
-   ```
-Execute tests for autogenerated 1GB images (only on Linux targets) + fsck:
+make test
+```
+1GB images (Linux only), then fsck:
 ```bash
- make test_all
-   ```
+make test_all
+```
 
 Run regression tests
 =====
 
-Small self-contained tests live in `tests/` and run through CTest. They need
-`mke2fs` (e2fsprogs), `sfdisk` (util-linux) and `python3` on the host to
-build their images, and `pkg-config` for `install_package`; no root access
-is required:
+The CTest suite in `tests/`. It needs `mke2fs` (e2fsprogs), `sfdisk`
+(util-linux) and `python3` to build its images, and `pkg-config` for
+`install_package`; no root:
 ```bash
- make generic
- cd build_generic
- make
- ctest --output-on-failure
-   ```
-To run them with AddressSanitizer/UBSan, configure with
+make generic
+cd build_generic
+make
+ctest --output-on-failure
+```
+With AddressSanitizer/UBSan: configure with
 `-DLWEXT4_SANITIZE=address,undefined`.
 
-Other Linux architectures can be tested under qemu-user with the
-`toolchain/linux-cross.cmake` toolchain (`gcc-<triple>` and `qemu-user`
-packages). The byte order is taken from the compiler:
+Other Linux architectures under qemu-user, with `toolchain/linux-cross.cmake`
+(`gcc-<triple>` and `qemu-user` packages):
 ```bash
- cmake -S . -B build_s390x -DCMAKE_TOOLCHAIN_FILE=toolchain/linux-cross.cmake \
-       -DCROSS_TRIPLE=s390x-linux-gnu -DCROSS_EMULATOR=qemu-s390x
- cmake --build build_s390x
- ctest --test-dir build_s390x --output-on-failure
- ci/scripts/fs-roundtrip.sh build_s390x qemu-s390x -L /usr/s390x-linux-gnu
-   ```
-`fs-roundtrip.sh` formats images with mke2fs and lwext4-mkfs, exercises them
-with lwext4-generic and checks the result with e2fsck.
+cmake -S . -B build_s390x -DCMAKE_TOOLCHAIN_FILE=toolchain/linux-cross.cmake \
+      -DCROSS_TRIPLE=s390x-linux-gnu -DCROSS_EMULATOR=qemu-s390x
+cmake --build build_s390x
+ctest --test-dir build_s390x --output-on-failure
+ci/scripts/fs-roundtrip.sh build_s390x qemu-s390x -L /usr/s390x-linux-gnu
+```
+`fs-roundtrip.sh` formats images with mke2fs and lwext4-mkfs, exercises
+them with lwext4-generic and checks them with e2fsck.
 
-The bare-metal and simulator toolchains build `tests/baremetal`, a test
-firmware (unit tests, read-only mounts of mke2fs images, ext4_mkfs and
-read/write tests on a RAM disk where there is RAM for one) that `ctest`
-runs on an emulator: `cortex-m*` on QEMU MPS2 boards, `arm-sim` on
-qemu-arm, `atmega1284` on simavr and `msp430-sim` on msp430-elf-run. The
-MinGW build runs its tests under Wine.
+The microcontroller toolchains also build [tests/baremetal](tests/baremetal),
+a test firmware that `ctest` runs in an emulator (see [Build for a
+microcontroller](#build-for-a-microcontroller)).
 
-Every CI job runs in a container defined in `ci/`, so the whole chain runs
-locally with only docker installed, exactly as in GitHub Actions
-(`.github/workflows/ci.yml`):
+Every CI job, locally, with only docker ([ci/README.md](ci/README.md)):
 ```bash
- ci/run.sh --list
- ci/run.sh qemu-user s390x
- ci/run.sh avr
-   ```
-See `ci/README.md`.
+ci/run.sh --list
+ci/run.sh qemu-user s390x
+ci/run.sh avr
+```
 
 Using lwext4-mkfs tool
 =====
-It is possible to create ext2/3/4 partition by internal library tool.
-
-Generate empty file (1GB):
+Formats an image or device as ext2/3/4. A 1GB image:
 ```bash
- dd if=/dev/zero of=ext_image bs=1M count=1024
-   ```
-Create ext2 partition:
+dd if=/dev/zero of=ext_image bs=1M count=1024
+```
+ext2:
 ```bash
- lwext4-mkfs -i ext_image -e 2
-   ```
-Create ext3 partition:
+lwext4-mkfs -i ext_image -e 2
+```
+ext3:
 ```bash
- lwext4-mkfs -i ext_image -e 3
-   ```
-Create ext4 partition:
+lwext4-mkfs -i ext_image -e 3
+```
+ext4:
 ```bash
- lwext4-mkfs -i ext_image -e 4
-   ```
-Show full option set:
+lwext4-mkfs -i ext_image -e 4
+```
+All options:
 ```bash
- lwext4-mkfs --help
-   ```
-
-Cross compile standalone library
-=====
-Toolchains needed:
-------------
-
-Lwext4 could be compiled for many targets. Here are an examples for 8/16/32/64 bit architectures.
-* generic for x86 or amd64
-* arm-none-eabi-gcc for ARM cortex-m0/m3/m4 microcontrollers
-* avr-gcc for AVR xmega microcontrollers
-* msp430-gcc for msp430 microcontrollers
-
-The library is tested on the host (x86-64, aarch64), on other Linux
-architectures under qemu-user (including big endian s390x) and on Cortex-M
-under QEMU, see "Run regression tests". For AVR and MSP430 compilation
-passes (with warnings somewhere) but tests are not done yet. The byte order
-is taken from the compiler (`__BYTE_ORDER__`, or the usual per architecture
-macros such as `__ARMEB__`/`_MIPSEB`). `CONFIG_BIG_ENDIAN` (1 or 0) overrides
-it for compilers that define none of them; a value that contradicts the
-compiler is a build error.
-
-Build avrxmega7 library:
-------------
-```bash
- make avrxmega7
- cd build_avrxmega7
- make lwext4
- ```
-
-Build cortex-m0 library:
-------------
-```bash
- make cortex-m0
- cd build_cortex-m0
- make lwext4
- ```
-
-Build cortex-m3 library:
-------------
-```bash
- make cortex-m3
- cd build_cortex-m3
- make lwext4
- ```
-
-Build cortex-m4 library:
-------------
-```bash
- make cortex-m4
- cd build_cortex-m4
- make lwext4
+lwext4-mkfs --help
 ```
 
+Credits
+=====
 
+Written by Grzegorz Kostka. Most of the source code comes from
+[HelenOS](http://helenos.org/); some features are based on FreeBSD and
+Linux.
+
+KaHo Ng (https://github.com/ngkaho1234): advanced extents, xattrs,
+metadata checksums, journal recovery and transactions, many fixes.
+[fuse-lwext4](https://github.com/ngkaho1234/fuse-lwext4) uses lwext4 as a
+FUSE filesystem.
+
+Some of the source files are licensed under GPLv2. It makes whole
+lwext4 GPLv2 licensed. To use library as a BSD3, GPLv2 licensed source
+files must be removed first. At this point there are two files
+licensed under GPLv2:
+* ext4_xattr.c
+* ext4_extent.c
+
+All other modules and headers are BSD-3-Clause licensed code.
