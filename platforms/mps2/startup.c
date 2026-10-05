@@ -1,12 +1,13 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /*
- * Minimal Cortex-M startup for the bare-metal test: vector table,
- * .data/.bss initialisation, FPU enable and semihosting console/exit.
+ * Cortex-M start-up for the MPS2 boards (mps2.ld): vector table,
+ * .data/.bss initialisation, FPU enable, a fault handler that reports
+ * where, and the semihosting console and exit of platform.h.
  */
 
 #include <stdint.h>
 
-#include "check.h"
+#include "../platform.h"
 
 extern uint32_t _sidata, _sdata, _edata, _sbss, _ebss, _estack;
 

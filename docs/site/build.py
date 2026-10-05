@@ -6,8 +6,8 @@
 
 writes OUT/mkdocs.yml and OUT/docs/: the README as the home page, the
 repository's other documents (CONTRIBUTING.md, the READMEs of ci/, the
-examples, the ports, the fuzzers, docs/performance), and pages generated
-from the code:
+examples, the ports, the platforms, the fuzzers, docs/performance), and
+pages generated from the code:
 
   configuration.md    the build options of include/ext4_config.h
   testing/index.md    every regression test, from its leading comment
@@ -459,8 +459,11 @@ def main(argv):
     site.map("examples/README.md", "examples/index.md")
     examples = sorted(glob.glob("examples/*/README.md"))
     ports = sorted(glob.glob("ports/*/README.md"))
-    for path in examples + ports:
+    platforms = sorted(glob.glob("platforms/*/README.md"))
+    for path in examples + ports + platforms:
         site.map(path, "%s/%s.md" % tuple(path.split("/")[:2]))
+    if os.path.exists("platforms/README.md"):
+        site.map("platforms/README.md", "platforms/index.md")
     perf = sorted(glob.glob("docs/performance/*.md"))
     for path in perf:
         site.map(path, "performance/" + (
@@ -470,8 +473,10 @@ def main(argv):
 
     site.copy("README.md")
     site.copy("CONTRIBUTING.md")
-    for path in ["examples/README.md"] + examples + ports + perf:
+    for path in ["examples/README.md"] + examples + ports + platforms + perf:
         site.copy(path)
+    if os.path.exists("platforms/README.md"):
+        site.copy("platforms/README.md")
     if os.path.exists("tests/bench/README.md"):
         site.copy("tests/bench/README.md")
     configuration(site)
@@ -489,6 +494,10 @@ def main(argv):
     if ports:
         items.append(("Ports", [(readme_title(p, p.split("/")[1]),
                                  site.pages[p]) for p in ports]))
+    if platforms:
+        items.append(("Platforms", [("Overview", "platforms/index.md")] + [
+            (readme_title(p, p.split("/")[1]), site.pages[p])
+            for p in platforms]))
     if perf:
         sub = [("Overview", "performance/index.md")]
         sub += [(os.path.basename(p)[:-3], site.pages[p]) for p in perf

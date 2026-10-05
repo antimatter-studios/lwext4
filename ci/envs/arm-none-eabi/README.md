@@ -12,9 +12,9 @@ Used by
 
 - `ci/jobs/cortex-m.sh <cortex-m0|cortex-m0+|cortex-m3|cortex-m4|cortex-m4f|cortex-m7>`:
   builds `tests/baremetal` with `toolchain/<cpu>.cmake` and boots it on an
-  MPS2 board. `tests/baremetal/startup.c` and `mps2.ld` are the entire
-  "board support": vector table, RAM initialisation and semihosting for the
-  console and the exit status.
+  MPS2 board. [platforms/mps2](../../../platforms/mps2/README.md) is the
+  entire "board support": vector table, RAM initialisation, semihosting for
+  the console and the exit status, and an instruction counter.
 - `ci/jobs/arm-sim.sh`: the same firmware for the classic ARM7TDMI with
   newlib's `rdimon` semihosting library, run by `qemu-arm`.
 

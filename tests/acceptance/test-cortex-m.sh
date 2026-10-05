@@ -78,9 +78,9 @@ ram()
 	arm-none-eabi-gcc -mthumb -mcpu=cortex-m4 -O2 -std=gnu11 -Iinclude \
 		-Ibuild_cortex-m4/include -DCONFIG_USE_DEFAULT_CONFIG=0 \
 		-DCONFIG_BLOCK_DEV_CACHE_SIZE=8 -DFOOTPRINT_EXT="$ext" "$@" \
-		"$ACC_DIR/footprint.c" tests/baremetal/startup.c \
+		"$ACC_DIR/footprint.c" platforms/mps2/startup.c \
 		"$WORK/ram-$name"/*.o --specs=rdimon.specs \
-		-T tests/baremetal/mps2.ld -Wl,--gc-sections \
+		-T platforms/mps2/mps2.ld -Wl,--gc-sections \
 		-Wl,--wrap=malloc,--wrap=calloc,--wrap=realloc,--wrap=free \
 		-o "$WORK/footprint-$name.elf" ||
 		die "cannot link the footprint firmware ($name)"
