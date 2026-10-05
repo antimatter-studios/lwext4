@@ -10,6 +10,7 @@ examples, the ports, the platforms, the fuzzers, docs/performance), and
 pages generated from the code:
 
   configuration.md    the build options of include/ext4_config.h
+  firmware/*.md       a page per Cortex-M CPU: the example firmware there
   testing/index.md    every regression test, from its leading comment
   testing/fuzzing.md  the fuzzers' README and every crash input kept
   ci/index.md         ci/README.md, the jobs and the workflows
@@ -352,6 +353,93 @@ release; all releases are on [GitHub](%s%s/releases).
 """ % (GITHUB, REPO, GITHUB, REPO))
 
 
+def firmware(site):
+    """A page per Cortex-M CPU: its board in QEMU, how to build and run the
+    example firmware (examples/firmware) for it, where the release has it,
+    and its performance figures. From the toolchain files, platforms/mps2
+    and the applications' leading comments."""
+    apps = sorted(glob.glob("examples/firmware/*.c"))
+    if not apps:
+        return []
+    rows = []
+    for path in apps:
+        paras = comment(path, "/*")
+        what = paras[0] if paras else ""
+        rows.append("| [%s](%s) | %s |" % (
+            os.path.basename(path), source_url(path), cell(what)))
+    pages, index = [], []
+    for tc in sorted(glob.glob("toolchain/cortex-m*.cmake")):
+        cpu = os.path.basename(tc)[:-6]
+        text = read(tc)
+        flags = " ".join(
+            m.group(1).strip() for m in re.finditer(
+                r'set\((?:MCPU|VFP)_FLAGS\s+"([^"]*)"\)', text)
+            if m.group(1).strip())
+        # the boards of platforms/mps2/mps2.cmake
+        machine = "mps2-an500" if "cortex-m7" in flags else \
+            "mps2-an386" if "cortex-m4" in flags else "mps2-an385"
+        perf = "docs/performance/%s.md" % cpu
+        perf_line = ("[Performance on %s](../performance/%s.md): instructions, "
+                     "block I/O, heap and stack per operation, code size."
+                     % (cpu, cpu)) if os.path.exists(perf) else \
+            "No benchmark figures for this CPU yet: see [Performance](../performance/index.md) for the others."
+        page = "firmware/%s.md" % cpu
+        site.write(page, """# %(cpu)s
+
+| | |
+|---|---|
+| Compiler flags | `%(flags)s` ([toolchain/%(cpu)s.cmake](%(tc)s)) |
+| Runs on | QEMU `%(machine)s` ([platforms/mps2](../platforms/mps2.md)) |
+| In each release | `%(cpu)s/` of `lwext4-<version>-cortex-m.tar.gz` ([Downloads](../downloads.md)): `lib/liblwext4.a`, the headers, `firmware/*.elf` |
+
+## Example firmware
+
+%(rows)s
+
+## Build and run
+
+```sh
+cmake -S . -B build-%(cpu)s -DCMAKE_TOOLCHAIN_FILE=toolchain/%(cpu)s.cmake
+cmake --build build-%(cpu)s
+ctest --test-dir build-%(cpu)s -R firmware -V
+```
+
+CTest runs each application in QEMU on a disk image and checks the image
+with e2fsprogs ([examples/firmware](../examples/firmware.md)). One by
+hand, on an image of your own:
+
+```sh
+truncate -s 8M disk.img
+qemu-system-arm -M %(machine)s -nographic -monitor none -serial none \\
+    -semihosting-config enable=on,target=native,arg=disk.img \\
+    -kernel build-%(cpu)s/examples/firmware/hello.elf
+e2fsck -fn disk.img
+```
+
+## Cost
+
+%(perf)s
+""" % {"cpu": cpu, "flags": flags, "tc": source_url(tc), "machine": machine,
+       "rows": "| Application | What it does |\n|---|---|\n" + "\n".join(rows),
+       "perf": perf_line})
+        pages.append((cpu, page))
+        index.append("| [%s](%s.md) | `%s` | %s |" % (
+            cpu, cpu, machine,
+            "[figures](../performance/%s.md)" % cpu
+            if os.path.exists(perf) else ""))
+    site.write("firmware/index.md", """# Firmware by CPU
+
+The [example firmware](../examples/firmware.md) is built for every
+Cortex-M CPU and run in QEMU on every pull request. Each page has the
+build and run commands for that CPU, and what it costs there.
+
+| CPU | QEMU board | Performance |
+|---|---|---|
+%s
+""" % "\n".join(index))
+    return pages
+
+
 def licence(site):
     site.write("licence.md", """# Licence
 
@@ -484,6 +572,7 @@ def main(argv):
     fuzzing(site)
     ci(site)
     downloads(site)
+    fw = firmware(site)
     licence(site)
 
     items = [("Home", "index.md"), ("Downloads", "downloads.md"),
@@ -494,6 +583,9 @@ def main(argv):
     if ports:
         items.append(("Ports", [(readme_title(p, p.split("/")[1]),
                                  site.pages[p]) for p in ports]))
+    if fw:
+        items.append(("Firmware", [("Overview", "firmware/index.md")] +
+                      list(fw)))
     if platforms:
         items.append(("Platforms", [("Overview", "platforms/index.md")] + [
             (readme_title(p, p.split("/")[1]), site.pages[p])
