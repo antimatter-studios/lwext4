@@ -9,6 +9,14 @@
 #   /medium     a directory in a block, with an inline subdirectory
 # The test writes to all of it (fork issue #130, writing).
 t="$1.tree"
+acl()
+{
+	python3 "$(dirname "$0")/common/no_acl.py" "$@"
+}
+# A default ACL on the tree, as a checkout may have (fork issue #173): what
+# is made in it inherits ACLs, which no_acl.py has to remove
+mkdir -p "$t"
+acl --plant "$t"
 mkdir -p "$t/small" "$t/medium/deeper" "$t/gone/sub"
 echo g >"$t/gone/sub/x"
 for n in 1 59 60 61 100 120 140 5000; do
@@ -20,7 +28,7 @@ for i in 1 2 3 4 5 6; do echo m$i >"$t/medium/entry_$i"; done
 echo deep >"$t/medium/deeper/x"
 ln -s "$(printf 'L%.0s' $(seq 1 80))" "$t/long"
 # No inherited ACLs: they would take the room of system.data
-if command -v setfacl >/dev/null 2>&1; then setfacl -R -b "$t"; fi
+acl "$t"
 mke2fs -q -F -t ext4 -b 1024 -I 256 -O inline_data,^metadata_csum_seed,^orphan_file -d "$t" "$1" 4M
 rm -rf "$t"
 
