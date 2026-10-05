@@ -43,7 +43,22 @@ ci/run.sh fuzz run 600            # fuzz each target for 600 s
 ci/run.sh fuzz run 3600 fuzz_rw   # one target
 ```
 
-New crash inputs land in `build-ci/fuzz/art/`. To report one: minimise it
+New crash inputs land in `build-ci/fuzz/art/`, and the full output of each
+target in `build-ci/fuzz/<target>.run.log`. The corpus a run grows is kept
+in `build-ci/fuzz-corpus/<target>`, so the next run continues from it. To
+report a crash: minimise the input
 (`build-ci/fuzz/<target> -minimize_crash=1 -runs=10000 <input>`), file an
 issue, and add the input, gzipped (`gzip -9 -n`), to `crashes/` in the
 pull request that fixes it, so `fuzz-replay` keeps it fixed.
+
+Every night
+-----------
+
+[fuzz.yml](../../.github/workflows/fuzz.yml) fuzzes every target on GitHub
+for 30 minutes each, from the corpus of the nights before (kept in the
+Actions cache). When a target crashes, hangs or leaks, its job fails,
+uploads the inputs and the target's output, and opens an issue labelled
+[`fuzzing`](https://github.com/antimatter-studios/lwext4/issues?q=label%3Afuzzing)
+with the report and the commands to reproduce it, or comments on the one
+already open for that target. It runs by hand too, for any time per
+target: `gh workflow run fuzz.yml -f seconds=3600`.

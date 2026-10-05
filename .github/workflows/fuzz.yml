@@ -1,0 +1,94 @@
+# SPDX-License-Identifier: BSD-3-Clause
+#
+# Fuzzing every night: each target of tests/fuzz for 30 minutes, from the
+# corpus the previous nights grew (kept in the Actions cache). A target
+# that crashes, hangs or leaks fails its job, uploads the inputs and its
+# full output, and opens an issue labelled `fuzzing` (or comments on the
+# one still open for it): ci/scripts/fuzz-report.sh.
+#
+# Not a check of pull requests: what it finds is in code already on main,
+# and fuzz-replay (ci.yml) keeps the bugs it found fixed. A pull request
+# that changes this fuzzing runs it for a minute per target, without
+# reporting, to prove it works.
+name: Fuzzing
+
+on:
+  schedule:
+    - cron: "23 2 * * *"
+  workflow_dispatch:
+    inputs:
+      seconds:
+        description: Seconds of fuzzing per target
+        type: number
+        default: 1800
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/fuzz.yml
+      - ci/jobs/fuzz.sh
+      - ci/scripts/fuzz-report.sh
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  # One job per tests/fuzz/fuzz_<name>.c
+  targets:
+    runs-on: ubuntu-24.04
+    outputs:
+      list: ${{ steps.list.outputs.list }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: list
+        run: |
+          list=$(ls tests/fuzz/fuzz_*.c | xargs -n1 basename | sed 's/\.c$//' |
+            jq -R . | jq -sc .)
+          echo "list=$list" >>"$GITHUB_OUTPUT"
+
+  fuzz:
+    name: fuzz / ${{ matrix.target }}
+    needs: targets
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      issues: write
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(needs.targets.outputs.list) }}
+    env:
+      SECONDS_PER_TARGET: ${{ github.event_name == 'pull_request' && 60 || inputs.seconds || 1800 }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/cache/restore@v6
+        with:
+          path: build-ci/fuzz-corpus/${{ matrix.target }}
+          key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
+          restore-keys: fuzz-corpus-${{ matrix.target }}-
+      - run: ci/run.sh fuzz run "$SECONDS_PER_TARGET" ${{ matrix.target }}
+      - if: github.event_name != 'pull_request' && !cancelled()
+        uses: actions/cache/save@v6
+        with:
+          path: build-ci/fuzz-corpus/${{ matrix.target }}
+          key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fuzz-${{ matrix.target }}
+          path: |
+            build-ci/fuzz/art/
+            build-ci/fuzz/${{ matrix.target }}.run.log
+          if-no-files-found: ignore
+          retention-days: 30
+      - if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DRY_RUN: ${{ github.event_name == 'pull_request' && '1' || '' }}
+        run: >
+          ci/scripts/fuzz-report.sh ${{ matrix.target }} "$GITHUB_REPOSITORY"
+          "$GITHUB_RUN_ID" fuzz-${{ matrix.target }}
