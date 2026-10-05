@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # platforms/mps2: firmware for the Arm MPS2 boards that QEMU emulates
-# (README.md here). Included by the CMake files that build firmware for a
-# cortex-m* toolchain:
+# (README.md here), for the cortex-m* toolchains. Defines, as every
+# platforms/<name>/<name>.cmake does:
 #
-#   mps2_firmware(<target> <sources>...)  an executable linked with lwext4,
-#                                         the start-up code and mps2.ld
-#   ${MPS2_RUNNER} <elf>                  runs one in QEMU; the exit status
-#                                         is the firmware's
+#   platform_firmware(<target> <sources>...)  an executable linked with
+#                                             lwext4 and the board code
+#   ${PLATFORM_RUNNER} <elf>                  runs one in QEMU; the exit
+#                                             status is the firmware's
 #
 # The board: -DLWEXT4_QEMU_MACHINE, by default the one of the toolchain's
 # CPU. ARMv6-M (Cortex-M0/M0+) code also runs on the Cortex-M3 of the AN385.
@@ -25,14 +25,11 @@ endif()
 set(LWEXT4_QEMU_MACHINE ${mps2_default_machine} CACHE STRING
     "QEMU machine (-M) for the MPS2 firmware")
 
-set(MPS2_RUNNER ${LWEXT4_QEMU_SYSTEM_ARM} -M ${LWEXT4_QEMU_MACHINE}
+set(PLATFORM_RUNNER ${LWEXT4_QEMU_SYSTEM_ARM} -M ${LWEXT4_QEMU_MACHINE}
     -nographic -monitor none -serial none
     -semihosting-config enable=on,target=native -kernel)
 
-# Start-up files are needed here, whatever the library-only toolchain says.
-string(REPLACE "-nostartfiles" "" CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS}")
-
-function(mps2_firmware target)
+function(platform_firmware target)
     add_executable(${target} ${ARGN} ${MPS2_DIR}/startup.c ${MPS2_DIR}/counter.c
                    ${MPS2_DIR}/disk.c)
     target_include_directories(${target} PRIVATE ${MPS2_DIR}/..)

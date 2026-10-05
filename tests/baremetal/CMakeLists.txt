@@ -35,58 +35,30 @@ add_custom_command(
 set(sources main.c unit.c images.c ${CMAKE_CURRENT_BINARY_DIR}/testdata.h)
 set(defines "")
 
-# Startup files are needed here, whatever the library-only toolchain says.
-string(REPLACE "-nostartfiles" "" CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS}")
-
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "^cortex-m")
-    # The MPS2 boards under QEMU (platforms/mps2)
-    include(${PROJECT_SOURCE_DIR}/platforms/mps2/mps2.cmake)
-    set(runner ${MPS2_RUNNER})
-elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL arm-sim)
-    set(LWEXT4_QEMU_ARM qemu-arm CACHE STRING
-        "qemu-arm (user mode) binary used to run the arm-sim test")
-    list(APPEND sources platform_hosted.c)
-    set(link_flags "")
-    # The firmware is linked at 0x8000, below the usual vm.mmap_min_addr of
-    # 64 KiB: give qemu a guest base so the host mapping lands elsewhere.
-    set(runner ${LWEXT4_QEMU_ARM} -B 0x40000000)
-elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL atmega1284)
-    list(APPEND sources platform_avr.c)
+# The board code of the target (platforms/)
+include(${PROJECT_SOURCE_DIR}/platforms/platform.cmake)
+if(CMAKE_SYSTEM_PROCESSOR STREQUAL atmega1284)
     list(APPEND defines LWEXT4_TEST_RAMDISK_SIZE=0)
-    set(link_flags "")
-    set(runner simavr -m atmega1284 -f 16000000)
 elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL msp430-sim)
-    list(APPEND sources platform_hosted.c)
     # The simulator has 512 KiB of RAM above 64 KiB; ext3/ext4 journals
     # need at least 1024 blocks, so run the mkfs tests without them.
     list(APPEND defines LWEXT4_TEST_RAMDISK_SIZE=256ul*1024ul
                         LWEXT4_TEST_JOURNAL=0)
-    set(link_flags "-msim")
-    set(runner ${MSP430_PREFIX}-run)
-else()
-    message(FATAL_ERROR "tests/baremetal: no runner for ${CMAKE_SYSTEM_PROCESSOR}")
 endif()
 
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "^cortex-m")
-    mps2_firmware(baremetal_test.elf ${sources})
-else()
-    add_executable(baremetal_test.elf ${sources})
-    target_link_libraries(baremetal_test.elf lwext4)
-    set_target_properties(baremetal_test.elf PROPERTIES LINK_FLAGS
-        "${link_flags} -Wl,-Map=baremetal_test.map")
-endif()
+platform_firmware(baremetal_test.elf ${sources})
 target_include_directories(baremetal_test.elf PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR})
 target_compile_definitions(baremetal_test.elf PRIVATE ${defines})
 
-add_test(NAME baremetal COMMAND ${runner} $<TARGET_FILE:baremetal_test.elf>)
+add_test(NAME baremetal COMMAND ${PLATFORM_RUNNER} $<TARGET_FILE:baremetal_test.elf>)
 
 # The benchmark (tests/bench, fork issue #165) on the MPS2 boards: QEMU
 # counts instructions exactly with -icount shift=0.
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "^cortex-m")
     set(bench_dir ${PROJECT_SOURCE_DIR}/tests/bench)
-    mps2_firmware(bench.elf ${bench_dir}/bench.c ${bench_dir}/bench_heap.c
-                  ${bench_dir}/platform_mps2.c)
+    platform_firmware(bench.elf ${bench_dir}/bench.c ${bench_dir}/bench_heap.c
+                      ${bench_dir}/platform_mps2.c)
     target_include_directories(bench.elf PRIVATE ${bench_dir})
     # Named after the toolchain file: toolchain/cortex-m7.cmake sets
     # CMAKE_SYSTEM_PROCESSOR cortex-m4, to build with the M4 configuration
