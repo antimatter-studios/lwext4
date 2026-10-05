@@ -303,6 +303,7 @@ Project tree
 *  src              - source files
 *  include          - header files
 *  ports            - glue for RTOSes and SDKs (Zephyr)
+*  platforms        - board code of the test firmware and the examples
 *  tests            - regression tests, acceptance tests, fuzzing, benchmark, test firmware
 *  toolchain        - cmake toolchain files
 *  ci               - CI jobs and their containers (see [ci/README.md](ci/README.md))
