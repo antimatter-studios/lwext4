@@ -22,18 +22,20 @@ endif()
 
 project(lwext4_baremetal_sdcard C)
 
-set(BOARD nucleo_f401re CACHE STRING "Board, a directory under boards/")
+set(BOARD nucleo_f401re CACHE STRING "Board, a directory of platforms/ with a board.cmake")
 option(WRITE_BACK_CACHE "Enable lwext4's write back block cache (faster, more RAM)" OFF)
 set(BIG_FILE_KIB 256 CACHE STRING "Size of the large file the test writes")
 
-set(BOARD_DIR ${CMAKE_CURRENT_SOURCE_DIR}/boards/${BOARD})
+get_filename_component(LWEXT4_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../.. ABSOLUTE)
+# The board code: platforms/<board> (clocks, pins, UART, SPI) on
+# platforms/sdcard (start-up, SD card over SPI, block device)
+set(BOARD_DIR ${LWEXT4_DIR}/platforms/${BOARD})
+set(SDCARD_DIR ${LWEXT4_DIR}/platforms/sdcard)
 if(NOT EXISTS ${BOARD_DIR}/board.cmake)
     message(FATAL_ERROR "Unknown board '${BOARD}'")
 endif()
 # BOARD_CPU_FLAGS, BOARD_DEFS, BOARD_RENODE_*
 include(${BOARD_DIR}/board.cmake)
-
-get_filename_component(LWEXT4_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../.. ABSOLUTE)
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE MinSizeRel)
 endif()
@@ -78,11 +80,11 @@ set(FW firmware.elf)
 add_executable(${FW}
     src/main.c
     src/workload.c
-    src/sd_blockdev.c
-    src/sd_spi.c
-    src/startup.c
+    ${SDCARD_DIR}/sd_blockdev.c
+    ${SDCARD_DIR}/sd_spi.c
+    ${SDCARD_DIR}/startup.c
     ${BOARD_DIR}/board.c)
-target_include_directories(${FW} PRIVATE src)
+target_include_directories(${FW} PRIVATE src ${SDCARD_DIR})
 target_compile_options(${FW} PRIVATE ${COMMON_FLAGS} -Wall -Wextra)
 target_compile_definitions(${FW} PRIVATE
     BIG_FILE_KIB=${BIG_FILE_KIB}
@@ -94,11 +96,11 @@ target_link_options(${FW} PRIVATE
     -nostartfiles
     -Wl,--gc-sections
     -Wl,-L${BOARD_DIR}
-    -T${CMAKE_CURRENT_SOURCE_DIR}/src/cortex-m.ld
+    -T${SDCARD_DIR}/cortex-m.ld
     -Wl,-Map=${CMAKE_CURRENT_BINARY_DIR}/firmware.map
     -Wl,--print-memory-usage)
 set_target_properties(${FW} PROPERTIES LINK_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/cortex-m.ld;${BOARD_DIR}/memory.ld")
+    "${SDCARD_DIR}/cortex-m.ld;${BOARD_DIR}/memory.ld")
 
 # Flashable images (firmware.hex, firmware.bin) and a flash/RAM breakdown
 # per component (footprint.txt).
