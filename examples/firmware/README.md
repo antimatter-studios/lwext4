@@ -20,7 +20,11 @@ cmake --build build-m4
 ctest --test-dir build-m4 -R firmware -V
 ```
 
-or `ci/run.sh cortex-m cortex-m4`, in CI's container. The firmware is
+or `ci/run.sh cortex-m cortex-m4`, in CI's container. Every release has
+the firmware of each CPU, with these sources and platforms/, in
+`lwext4-<version>-cortex-m.tar.gz` (`<cpu>/firmware/*.elf`); the
+[project site](https://antimatter-studios.github.io/lwext4/firmware/) has
+a page per CPU. The firmware is
 `build-m4/examples/firmware/<app>.elf`; QEMU runs it on a disk image with
 `-semihosting-config enable=on,target=native,arg=disk.img` (see
 [check.sh](check.sh)).

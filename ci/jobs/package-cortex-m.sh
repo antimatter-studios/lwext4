@@ -2,8 +2,10 @@
 # env: arm-none-eabi
 # Release package for bare-metal Cortex-M: liblwext4.a and the headers
 # (including the generated ext4_config.h of that build) for every Cortex-M
-# toolchain file, plus the CTest result of the test firmware of each build
-# (run on a QEMU MPS2 board, see cortex-m.sh).
+# toolchain file, the example firmware of each (examples/firmware, built
+# for its QEMU MPS2 board) with their sources and platforms/, plus the
+# CTest results of each build (the test firmware and the examples, run in
+# QEMU, see cortex-m.sh).
 . ci/scripts/common.sh
 . ci/scripts/package-common.sh
 version=$(pkg_version)
@@ -23,7 +25,14 @@ for cpu in cortex-m0 cortex-m0+ cortex-m3 cortex-m4 cortex-m4f cortex-m7; do
 	cp "$build/src/liblwext4.a" "$stage/$cpu/lib/"
 	cp -R include/. "$stage/$cpu/include/lwext4/"
 	cp -R "$build/include/." "$stage/$cpu/include/lwext4/"
+	mkdir -p "$stage/$cpu/firmware"
+	cp "$build"/examples/firmware/*.elf "$stage/$cpu/firmware/"
 done
+
+# The sources of the example firmware, and the board code they build on
+mkdir -p "$stage/examples/firmware" "$stage/platforms"
+cp examples/firmware/*.c examples/firmware/README.md "$stage/examples/firmware/"
+cp -R platforms/. "$stage/platforms/"
 
 cp "$stage"/test-results/*.xml "$(pkg_dist)/"
 pkg_tar "$stage" "$name"
