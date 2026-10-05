@@ -10,7 +10,8 @@ examples, the ports, the platforms, the fuzzers, docs/performance), and
 pages generated from the code:
 
   configuration.md    the build options of include/ext4_config.h
-  firmware/*.md       a page per Cortex-M CPU: the example firmware there
+  firmware/*.md       a page per Cortex-M CPU and SD card board: the
+                      example firmware there
   testing/index.md    every regression test, from its leading comment
   testing/fuzzing.md  the fuzzers' README and every crash input kept
   ci/index.md         ci/README.md, the jobs and the workflows
@@ -427,16 +428,67 @@ e2fsck -fn disk.img
             cpu, cpu, machine,
             "[figures](../performance/%s.md)" % cpu
             if os.path.exists(perf) else ""))
-    site.write("firmware/index.md", """# Firmware by CPU
+    boards = []
+    for bc in sorted(glob.glob("platforms/*/board.cmake")):
+        board = bc.split("/")[1]
+        flags = re.search(r"set\(BOARD_CPU_FLAGS\s+([^)]*)\)", read(bc))
+        flags = flags.group(1).strip() if flags else ""
+        mcu = re.search(r'board_mcu\[\]\s*=\s*"([^"]*)"',
+                        read("platforms/%s/board.c" % board))
+        mcu = mcu.group(1) if mcu else board
+        page = "firmware/%s.md" % board
+        site.write(page, """# %(board)s
+
+| | |
+|---|---|
+| MCU | %(mcu)s |
+| Compiler flags | `%(flags)s` ([board.cmake](%(bc)s)) |
+| Board code | [platforms/%(board)s](%(dir)s) on [platforms/sdcard](../platforms/sdcard.md): clocks, pins, a UART console, a micro SD card on SPI |
+| Runs on | the real board, and [Renode](https://renode.io) in CI |
+| In each release | `apps/<app>.hex` (and `.elf`) of `lwext4-<version>-baremetal-sdcard-%(board)s.tar.gz` ([Downloads](../downloads.md)), next to the test firmware of [examples/baremetal-sdcard](../examples/baremetal-sdcard.md) |
+
+## Example firmware
+
+%(rows)s
+
+Each prints `READY` on the console and waits for a line: press Enter, or
+type options as the tests do (`records=<n>` for the datalogger). They use
+the whole SD card: hello formats it, the datalogger formats it only if it
+holds no filesystem, and the reader only reads it.
+
+## Build, test, flash
+
+```sh
+ci/run.sh baremetal-sdcard-build %(board)s       # dist/%(board)s/apps/*.hex
+ci/run.sh renode-baremetal-sdcard %(board)s --include apps
+```
+
+The Renode tests ([apps.robot](%(robot)s)) run each application on the
+emulated board with an SD card image, and check the image with e2fsck and
+debugfs; the datalogger loses power at 13 different block writes and must
+keep every record it reported written. Flash `apps/<app>.hex` like the
+test firmware (see [examples/baremetal-sdcard](../examples/baremetal-sdcard.md)).
+""" % {"board": board, "mcu": mcu, "flags": flags, "bc": source_url(bc),
+       "dir": source_url("platforms/" + board),
+       "robot": source_url("tests/renode/apps.robot"),
+       "rows": "| Application | What it does |\n|---|---|\n" + "\n".join(rows)})
+        pages.append((board, page))
+        boards.append("| [%s](%s.md) | %s |" % (board, board, mcu))
+    site.write("firmware/index.md", """# Firmware by CPU and board
 
 The [example firmware](../examples/firmware.md) is built for every
-Cortex-M CPU and run in QEMU on every pull request. Each page has the
-build and run commands for that CPU, and what it costs there.
+Cortex-M CPU and run in QEMU, and for every SD card board and run in
+Renode, on every pull request. Each page has the build and run commands,
+and for the CPUs what it costs there.
 
 | CPU | QEMU board | Performance |
 |---|---|---|
 %s
-""" % "\n".join(index))
+
+| Board | MCU |
+|---|---|
+%s
+""" % ("\n".join(index), "\n".join(boards)))
     return pages
 
 

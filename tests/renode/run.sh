@@ -1,6 +1,8 @@
 #!/bin/sh
 # SPDX-License-Identifier: BSD-3-Clause
-# Runs the Renode robot suite against a firmware build directory.
+# Runs the Renode robot suites against a firmware build directory:
+# lwext4.robot (the test firmware) and apps.robot (the example
+# applications).
 #
 #   tests/renode/run.sh <build-dir> [renode-test args, e.g. --include/-t]
 #
@@ -26,7 +28,7 @@ out="$build/renode-results"
 mkdir -p "$out/images"
 # renode-test drops snapshots/ and logs/ of failed tests in the cwd
 cd "$out"
-exec renode-test "$here/lwext4.robot" \
+exec renode-test "$here/lwext4.robot" "$here/apps.robot" \
 	--results-dir "$out" \
 	--variable "BOARD:$BOARD" \
 	--variable "BOARD_REPL:$BOARD_REPL" \
@@ -34,5 +36,6 @@ exec renode-test "$here/lwext4.robot" \
 	--variable "BOARD_SPI:$BOARD_SPI" \
 	--variable "FIRMWARE:$FIRMWARE" \
 	--variable "ELF:$ELF" \
+	--variable "APP_DIR:$APP_DIR" \
 	--variable "WORKDIR:$out/images" \
 	$excludes "$@"

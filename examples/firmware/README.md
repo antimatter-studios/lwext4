@@ -3,8 +3,11 @@ Example firmware
 
 Three applications to start an MCU project from, written once against
 [platforms/platform.h](../../platforms/platform.h) and built for every
-Cortex-M CPU. CI runs each in QEMU on a disk image and checks the image
-with `e2fsck -fn` and `debugfs` ([check.sh](check.sh)).
+Cortex-M CPU, and for the boards with an SD card of
+[platforms/sdcard](../../platforms/sdcard/README.md). CI runs each in QEMU
+on a disk image ([check.sh](check.sh)), and on the emulated boards in
+Renode with an SD card image ([apps.robot](../../tests/renode/apps.robot)),
+and checks the image with `e2fsck -fn` and `debugfs`.
 
 | Application | What it does | Checked |
 |---|---|---|
@@ -29,7 +32,20 @@ a page per CPU. The firmware is
 `-semihosting-config enable=on,target=native,arg=disk.img` (see
 [check.sh](check.sh)).
 
-On your board, [platforms/mps2](../../platforms/mps2/README.md) is what
-you replace: its `disk.c` becomes your SD card or flash driver (the five
+On the SD card boards (NUCLEO-F401RE, NUCLEO-G071RB, NUCLEO-L552ZE-Q,
+nRF52840 DK) the applications are built with the board's firmware:
+
+```sh
+ci/run.sh baremetal-sdcard-build nucleo_f401re     # dist/nucleo_f401re/apps/<app>.hex
+ci/run.sh renode-baremetal-sdcard nucleo_f401re --include apps
+```
+
+Flash `apps/<app>.hex`; it prints `READY` on the board's console (the
+debugger's USB serial port) and starts when you press Enter. The disk is
+the whole SD card. Each release has them in
+`lwext4-<version>-baremetal-sdcard-<board>.tar.gz`.
+
+On your own board, [platforms/mps2](../../platforms/mps2/README.md) or
+[platforms/sdcard](../../platforms/sdcard/README.md) is what you replace: its `disk.c` becomes your SD card or flash driver (the five
 callbacks of [blockdev-template](../blockdev-template/my_blockdev.c)), its
 `startup.c` and `mps2.ld` your vendor's start-up code and memory map.

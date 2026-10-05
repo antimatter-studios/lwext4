@@ -111,7 +111,7 @@ Each one is built and run by CI, and what it writes is checked with
 |---|---|---|
 | [basic](examples/basic/main.c) | PC | the whole life cycle, step by step: mkfs, mount, journal, cache, files and directories, unmount |
 | [blockdev-template](examples/blockdev-template/my_blockdev.c) | PC (RAM disk) | an annotated block device skeleton: the part you write for new hardware |
-| [firmware](examples/firmware/README.md) | Cortex-M0, M0+, M3, M4, M4F, M7, in QEMU | hello, a datalogger that survives power cuts, a read-only reader: the applications to start an MCU project from, on [platforms/mps2](platforms/mps2/README.md) |
+| [firmware](examples/firmware/README.md) | Cortex-M0, M0+, M3, M4, M4F, M7, in QEMU; the four SD card boards, in Renode | hello, a datalogger that survives power cuts, a read-only reader: the applications to start an MCU project from, on [platforms/mps2](platforms/mps2/README.md) |
 | [baremetal-sdcard](examples/baremetal-sdcard/README.md) | NUCLEO-F401RE, NUCLEO-G071RB, NUCLEO-L552ZE-Q, nRF52840 DK, in Renode | bare metal, micro SD card on SPI, no SDK or RTOS: MBR, mkfs, journal, power cuts |
 | [zephyr](examples/zephyr/README.md) | Zephyr on mps2/an385, in QEMU | lwext4 as a Zephyr module on the disk access API |
 | [esp-idf](https://github.com/antimatter-studios/lwext4/tree/main/examples/esp-idf) | ESP32, ESP32-C3, ESP32-S3, in Espressif's QEMU | an ESP-IDF component with SPI flash and SD card block devices |

@@ -32,6 +32,7 @@ leaves in `examples/baremetal-sdcard/dist/nucleo_f401re/`:
 | `lwext4-example-<board>.bin` | raw image, starts at the beginning of the flash |
 | `lwext4-example-<board>.elf` | the same with symbols, for gdb |
 | `footprint.txt` | flash and RAM per component, lwext4 per source file |
+| `apps/<app>.hex`, `.elf` | the [example applications](../firmware/README.md) (hello, datalogger, reader) for the board |
 
 CI builds every board and publishes these as workflow artifacts
 (`lwext4-example-<board>`). Without docker: `cmake -S examples/baremetal-sdcard
@@ -60,6 +61,10 @@ in the [renode](../../ci/envs/renode) container and runs
    files in a loop; the harness stops the emulation at six different points
    of virtual time (mid SPI transfer, mid journal commit, ...), boots a new
    machine with the same card and lets lwext4 replay its journal.
+4. **The example applications** ([tests/renode/apps.robot](../../tests/renode/apps.robot)) -
+   hello, reader and the datalogger of [examples/firmware](../firmware/README.md)
+   on the board; the datalogger loses power at 13 different block writes
+   and must keep every record it reported written.
 
 After every run the card image is checked on the host by `e2fsck -fn` and
 `debugfs` ([tests/renode/scripts/sdimage.py](../../tests/renode/scripts/sdimage.py)):

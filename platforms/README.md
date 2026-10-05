@@ -14,9 +14,10 @@ runs on every pull request.
 | [simavr](simavr/README.md) | ATmega1284 | simavr |
 | [sdcard](sdcard/README.md) with `nucleo_f401re`, `nucleo_g071rb`, `nucleo_l552ze_q`, `nrf52840dk` | ST NUCLEO-F401RE, NUCLEO-G071RB, NUCLEO-L552ZE-Q, Nordic nRF52840 DK, with a micro SD card on SPI | the real boards, and Renode |
 
-The SD card boards are what [examples/baremetal-sdcard](../examples/baremetal-sdcard/README.md)
-runs on; they implement `board.h` of [sdcard](sdcard/README.md), and the
-platform API next (fork issue #169).
+The SD card boards implement `board.h` of [sdcard](sdcard/README.md),
+which implements the platform API on them; they run
+[examples/baremetal-sdcard](../examples/baremetal-sdcard/README.md) and
+the [example firmware](../examples/firmware/README.md).
 
 [platform.cmake](platform.cmake) picks the platform of the toolchain; CMake
 code that builds firmware includes it and calls
@@ -26,6 +27,6 @@ code that builds firmware includes it and calls
 | API ([platform.h](platform.h)) | |
 |---|---|
 | `platform_init()`, `platform_exit(status)` | console up; stop with a status |
-| `platform_disk()` | the storage, as an `ext4_blockdev` (mps2) |
-| `platform_cmdline()` | how the machine was started, options for tests (mps2) |
+| `platform_disk()` | the storage, as an `ext4_blockdev` (mps2, sdcard) |
+| `platform_cmdline()` | how the machine was started, options for tests (mps2, sdcard) |
 | `platform_counter()` | a counter to measure with (mps2) |

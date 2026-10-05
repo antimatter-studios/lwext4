@@ -19,9 +19,10 @@ with ~150 lines of register level code; this directory is what they share.
 | [cortex-m.ld](cortex-m.ld) | linker script; the board's `memory.ld` has the chip's flash and RAM sizes and the stack reservation |
 | [sd_spi.c](sd_spi.c) | the SD card in SPI mode: identification, CRC protected commands, single and multi block reads and writes |
 | [sd_blockdev.c](sd_blockdev.c) | the card, and its MBR partitions, as lwext4 block devices |
+| [platform.c](platform.c) | the platform API ([platform.h](../platform.h)) for the [example firmware](../../examples/firmware/README.md): `platform_disk()` is the whole card (with `cut=<n>` for power cuts in tests), `platform_cmdline()` prints `READY` and reads a line from the console, `platform_exit()` prints `EXIT <status>` |
 
 Each board directory has `board.c`, `memory.ld`, `board.cmake` (compiler
 flags, lwext4 options, Renode names) and `board.repl` (the board for
 [Renode](https://renode.io), which CI runs the firmware on, SD card
 included). [examples/baremetal-sdcard](../../examples/baremetal-sdcard/README.md)
-builds and tests them.
+builds and tests them, with the example applications (`apps/<app>.hex`).
