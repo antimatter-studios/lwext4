@@ -15,6 +15,9 @@ need nothing but Python.
 checkout has, so that what is made in it inherits ACLs on every machine
 and a test proves they are removed. It does nothing on a filesystem
 without ACLs.
+
+Both do nothing where Python has no xattr calls (they are Linux only):
+macOS has no system.posix_acl_* xattrs for mke2fs to copy.
 """
 import errno
 import os
@@ -50,6 +53,8 @@ def plant(path):
             raise
 
 
+if not hasattr(os, "setxattr"):
+    sys.exit(0)
 if sys.argv[1] == "--plant":
     plant(sys.argv[2])
     sys.exit(0)
