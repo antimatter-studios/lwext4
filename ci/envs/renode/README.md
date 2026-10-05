@@ -34,7 +34,7 @@ monitor, e.g.
 
 ```
 mach create
-machine LoadPlatformDescription @examples/baremetal-sdcard/boards/nucleo_f401re/board.repl
+machine LoadPlatformDescription @platforms/nucleo_f401re/board.repl
 machine SdCardFromFile @card.img sysbus.spi1 33554432 true "sdcard"
 sysbus LoadHEX @examples/baremetal-sdcard/dist/nucleo_f401re/lwext4-example-nucleo_f401re.hex
 emulation CreateServerSocketTerminal 3456 "term"

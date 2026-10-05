@@ -14,7 +14,7 @@ controller and an SD card.
 | `nrf52840dk` Nordic nRF52840 DK | nRF52840 | Cortex-M4F | 1 MiB / 256 KiB | SPIM2, EasyDMA | UARTE0 (J-Link VCP) |
 
 No vendor SDK or RTOS is used: each board is ~150 lines of register level
-code (`boards/<board>/board.c`), so the example shows everything lwext4
+code (`platforms/<board>/board.c`, see [platforms/](../../platforms/README.md)), so the example shows everything lwext4
 needs and nothing else. Porting to another chip means writing that one file.
 
 ## Build it (only docker needed)
@@ -68,27 +68,39 @@ the files must be exactly what the firmware wrote. For power cut images
 
 ## The pieces
 
+The board code is in [platforms/](../../platforms/README.md), shared with
+the other firmware of this repository:
+
 ```
-src/startup.c       vector table, .data/.bss init, fault handler that prints
-                    the faulting PC, newlib system calls (_sbrk, _write),
-                    heap and stack high water marks
-src/cortex-m.ld     linker script; boards/<board>/memory.ld has the chip's
-                    real flash/RAM sizes and the stack reservation
-src/sd_spi.c        SD card SPI mode driver: CMD0/CMD8/ACMD41/CMD58
-                    identification, CRC on (CMD59), CSD capacity, single and
-                    multi block reads/writes (CMD17/18/24/25)
-src/sd_blockdev.c   the lwext4 block device on top of it, and the MBR
-                    partitions (ext4_mbr_scan)
+platforms/sdcard/startup.c      vector table, .data/.bss init, fault handler
+                                that prints the faulting PC, newlib system
+                                calls (_sbrk, _write), heap and stack high
+                                water marks
+platforms/sdcard/cortex-m.ld    linker script; <board>/memory.ld has the
+                                chip's real flash/RAM sizes and the stack
+                                reservation
+platforms/sdcard/sd_spi.c       SD card SPI mode driver: CMD0/CMD8/ACMD41/
+                                CMD58 identification, CRC on (CMD59), CSD
+                                capacity, single and multi block
+                                reads/writes (CMD17/18/24/25)
+platforms/sdcard/sd_blockdev.c  the lwext4 block device on top of it, and
+                                the MBR partitions (ext4_mbr_scan)
+platforms/<board>/              board.c (clocks, pins, UART, SPI),
+                                memory.ld, board.cmake (CPU flags),
+                                board.repl (Renode description)
+```
+
+and here:
+
+```
 src/main.c          mount/umount, the test commands
 src/workload.c      the file system workload
-boards/<board>/     board.c (clocks, pins, UART, SPI), memory.ld,
-                    board.cmake (CPU flags), board.repl (Renode description)
 ```
 
 ### lwext4 integration
 
 lwext4 sees storage as a `struct ext4_blockdev` - open/close and
-bread/bwrite of whole physical blocks. `sd_blockdev.c` is the whole port:
+bread/bwrite of whole physical blocks. `platforms/sdcard/sd_blockdev.c` is the whole port:
 
 ```c
 EXT4_BLOCKDEV_STATIC_INSTANCE(sd_card_bd, 512, 0, sd_bd_open,

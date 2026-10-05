@@ -5,7 +5,7 @@
 #
 #   ci/run.sh baremetal-sdcard-build <board> [extra cmake -D options]
 #
-# Boards: the directories in examples/baremetal-sdcard/boards.
+# Boards: the directories of platforms/ with a board.cmake.
 # Output: examples/baremetal-sdcard/dist/<board>/
 #   lwext4-example-<board>.hex   Intel HEX, for st-flash/nrfjprog/OpenOCD or
 #                                drag and drop onto the board's USB drive

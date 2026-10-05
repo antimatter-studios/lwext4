@@ -26,7 +26,7 @@ def component(path):
             return "libgcc"
         return lib
     base = re.sub(r"\.c\.obj$|\.o$", "", path.split("/")[-1])
-    if "/boards/" in path or base == "board":
+    if base == "board":  # platforms/<board>/board.c
         return "app: board support"
     if base in ("crti", "crtn", "crtbegin", "crtend", "crt0"):
         return "libgcc"

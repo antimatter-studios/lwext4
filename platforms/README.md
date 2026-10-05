@@ -12,9 +12,11 @@ runs on every pull request.
 | [mps2](mps2/README.md) | Arm MPS2: AN385 (Cortex-M3, also M0/M0+ code), AN386 (M4), AN500 (M7) | QEMU |
 | [hosted](hosted/README.md) | ARM7TDMI (`arm-sim`), MSP430X (`msp430-sim`) | qemu-arm, the MSP430 GDB simulator |
 | [simavr](simavr/README.md) | ATmega1284 | simavr |
+| [sdcard](sdcard/README.md) with `nucleo_f401re`, `nucleo_g071rb`, `nucleo_l552ze_q`, `nrf52840dk` | ST NUCLEO-F401RE, NUCLEO-G071RB, NUCLEO-L552ZE-Q, Nordic nRF52840 DK, with a micro SD card on SPI | the real boards, and Renode |
 
-The boards of `examples/baremetal-sdcard` still have their own code; they
-move here next (fork issue #169).
+The SD card boards are what [examples/baremetal-sdcard](../examples/baremetal-sdcard/README.md)
+runs on; they implement `board.h` of [sdcard](sdcard/README.md), and the
+platform API next (fork issue #169).
 
 [platform.cmake](platform.cmake) picks the platform of the toolchain; CMake
 code that builds firmware includes it and calls
