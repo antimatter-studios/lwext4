@@ -113,6 +113,7 @@ fi
 check esp-idf    # firmware, built and run in QEMU by its own workflow (esp32.yml)
 check baremetal-sdcard    # firmware, built and run in Renode by its own workflow (renode.yml)
 check zephyr    # firmware, built and run in QEMU by its own workflow (zephyr.yml)
+check firmware    # firmware, built and run in QEMU by the cortex-m jobs of ci.yml (CTest firmware-*)
 
 for d in examples/*/; do
 	d=${d%/}

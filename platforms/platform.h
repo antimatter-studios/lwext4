@@ -22,4 +22,22 @@ void platform_exit(int status) __attribute__((noreturn));
 uint64_t platform_counter(void);
 extern const char *const platform_counter_unit;
 
+/**@brief The command line the machine was started with ("" if none): on
+ * MPS2 the arg= values of QEMU's -semihosting-config, separated by
+ * spaces.*/
+const char *platform_cmdline(void);
+
+struct ext4_blockdev;
+
+/**@brief The board's storage, as a block device for ext4_mkfs() and
+ * ext4_device_register(); NULL if there is none.
+ *
+ * MPS2: a disk image file on the host, through semihosting: the first word
+ * of the command line without '=' (default disk.img), which must exist; its
+ * size is the disk's. With cut=<n> on the command line the power is cut
+ * at the block write after the n-th: that write is not done, "POWER CUT"
+ * is printed and the machine stops with platform_exit(1), which is what a
+ * power loss leaves on the disk.*/
+struct ext4_blockdev *platform_disk(void);
+
 #endif

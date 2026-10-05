@@ -15,6 +15,7 @@ int main(void);
 void initialise_monitor_handles(void);
 
 #define SYS_WRITE0 0x04
+#define SYS_GET_CMDLINE 0x15
 #define SYS_EXIT 0x18
 #define ADP_Stopped_ApplicationExit 0x20026
 #define ADP_Stopped_RunTimeErrorUnknown 0x20023
@@ -30,6 +31,23 @@ static int semihost_call(int op, const void *arg)
 void platform_init(void)
 {
 	/* Reset_Handler already set up the semihosting console. */
+}
+
+const char *platform_cmdline(void)
+{
+	static char line[256];
+	static int done;
+	struct {
+		char *buf;
+		int len;
+	} arg = {line, sizeof(line) - 1};
+
+	if (!done) {
+		done = 1;
+		if (semihost_call(SYS_GET_CMDLINE, &arg) != 0)
+			line[0] = 0;
+	}
+	return line;
 }
 
 void platform_exit(int status)

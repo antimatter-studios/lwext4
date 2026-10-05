@@ -33,7 +33,8 @@ set(MPS2_RUNNER ${LWEXT4_QEMU_SYSTEM_ARM} -M ${LWEXT4_QEMU_MACHINE}
 string(REPLACE "-nostartfiles" "" CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS}")
 
 function(mps2_firmware target)
-    add_executable(${target} ${ARGN} ${MPS2_DIR}/startup.c ${MPS2_DIR}/counter.c)
+    add_executable(${target} ${ARGN} ${MPS2_DIR}/startup.c ${MPS2_DIR}/counter.c
+                   ${MPS2_DIR}/disk.c)
     target_include_directories(${target} PRIVATE ${MPS2_DIR}/..)
     target_link_libraries(${target} lwext4)
     string(REGEX REPLACE "\\.elf$" "" map ${target})
