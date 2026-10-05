@@ -24,10 +24,12 @@ if [ -z "$inputs" ]; then
 	exit 0
 fi
 
-# From the first error line of libFuzzer or a sanitizer, with the stack
-report=$(sed -n '/==ERROR\|runtime error:\|ERROR: libFuzzer\|^SUMMARY:/,$p' \
-	"$b/$target.run.log" | grep -v '^INFO:\|^MS: \|^base64: ' |
-	head -n 60)
+# From the first error line of libFuzzer or a sanitizer to its SUMMARY
+# line: the stacks, without the shadow memory map and the input bytes
+report=$(sed -n '/==ERROR\|runtime error:\|ERROR: libFuzzer/,/^SUMMARY:/{
+	p
+	/^SUMMARY:/q
+}' "$b/$target.run.log" | grep -v '^INFO:\|^MS: \|^base64: ' | head -n 80)
 [ -n "$report" ] || report=$(tail -n 40 "$b/$target.run.log")
 
 title="Scheduled fuzzing: $target fails"
