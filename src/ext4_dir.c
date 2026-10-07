@@ -272,6 +272,13 @@ static int ext4_dir_iterator_seek(struct ext4_dir_iter *it, uint64_t pos)
 	it->curr = NULL;
 
 	while (pos < size) {
+		/* A directory's logical blocks are 32-bit. A damaged size can
+		 * reach past block 2^32, where the index below would wrap to 0
+		 * and the holes be skipped again forever (#202): that is the
+		 * end of the directory. */
+		if (pos / block_size > UINT32_MAX)
+			break;
+
 		/* Compute next block address */
 		uint64_t current_blk_idx = it->curr_off / block_size;
 		uint32_t next_blk_idx = (uint32_t)(pos / block_size);
