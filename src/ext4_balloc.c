@@ -238,6 +238,19 @@ int ext4_balloc_free_blocks(struct ext4_inode_ref *inode_ref,
 	struct ext4_fs *fs = inode_ref->fs;
 	struct ext4_sblock *sb = &fs->sb;
 
+	/* A damaged extent can name blocks outside the filesystem. Their
+	 * block group indexes do not fit in 32 bits and wrap, so the loop
+	 * below would free nothing (or another group's blocks). Refuse the
+	 * range before any bitmap is touched. */
+	uint64_t blocks_cnt = ext4_sb_get_blocks_cnt(sb);
+	if (count == 0 || first < ext4_get32(sb, first_data_block) ||
+	    first >= blocks_cnt || count > blocks_cnt - first) {
+		ext4_dbg(DEBUG_BALLOC, DBG_WARN "Freeing blocks %" PRIu64
+			 "+%" PRIu32 " outside the filesystem (%" PRIu64
+			 " blocks)\n", first, count, blocks_cnt);
+		return EIO;
+	}
+
 	/* Compute indexes */
 	uint32_t bg_first = ext4_balloc_get_bgid_of_block(sb, first);
 

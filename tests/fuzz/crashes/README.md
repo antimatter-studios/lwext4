@@ -24,6 +24,7 @@ on every pull request, so the bug stays fixed. They are gzipped (`gzip -9
 | `162-truncate-inline-huge.gz` | fuzz_rw | #162: truncating an inline file with a damaged size of about 2^64 never ended (a timeout) |
 | `174-mkfs-tiny-journal.gz` | fuzz_mkfs | #174: ext4_mkfs made a 9 block journal, and a transaction bigger than the journal hit an assert |
 | `179-inode-128-copy.gz` | fuzz_mkfs | #179: with 128 byte i-nodes, copying the journal's i-node read past the cache buffer |
+| `199-free-blocks-beyond-fs.gz` | fuzz_rw | #199: freeing an extent that starts at block 2^48-1 of a 128 block filesystem wrapped the block group indexes, freed nothing and hit `ext4_assert(count == 0)` |
 | `mount-before-2026-10-04-ce41bd70.gz` | fuzz_mount | found on 2026-10-01 by the harness before it was in the repository; fixed on main by 2026-10-04 (not bisected) |
 
 Some crashes need the state an earlier input left behind and do not
