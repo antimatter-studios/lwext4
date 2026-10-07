@@ -618,6 +618,11 @@ static bool ext4_xattr_is_ibody_valid(struct ext4_inode_ref *inode_ref)
 	end = (char *)inode_ref->inode + inode_size;
 	min_offs = (char *)end - (char *)base;
 
+	/* The header and the first entry's terminator must lie inside the
+	 * inode before either is read. */
+	if ((char *)entry + sizeof(uint32_t) > (char *)end)
+		return false;
+
 	/*
 	 * Check whether the magic number in the header is correct.
 	 */
@@ -630,6 +635,11 @@ static bool ext4_xattr_is_ibody_valid(struct ext4_inode_ref *inode_ref)
 	 */
 	for (; !EXT4_XATTR_IS_LAST_ENTRY(entry);
 	     entry = EXT4_XATTR_NEXT(entry)) {
+		/* Only its first four bytes are known to be inside: the
+		 * fixed fields must be too before they are read (#203). */
+		if ((char *)(entry + 1) > (char *)end)
+			return false;
+
 		/* The offset of an empty value means nothing: lwext4 writes
 		 * 0, e2fsprogs the end of the area (Linux checks only
 		 * values that have bytes) */
