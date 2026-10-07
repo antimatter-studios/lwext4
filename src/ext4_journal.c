@@ -1036,23 +1036,37 @@ static void jbd_destroy_revoke_tree(struct recover_info *info)
 /**@brief  Add entries in a revoke block to revoke tree.
  * @param  jbd_fs jbd filesystem
  * @param  header revoke block header
- * @param  info  journal replay info*/
-static void jbd_build_revoke_tree(struct jbd_fs *jbd_fs,
-				  struct jbd_bhdr *header,
-				  struct recover_info *info)
+ * @param  info  journal replay info
+ * @return EOK, or EIO when the block's byte count does not fit it*/
+static int jbd_build_revoke_tree(struct jbd_fs *jbd_fs,
+				 struct jbd_bhdr *header,
+				 struct recover_info *info)
 {
 	char *blocks_entry;
 	struct jbd_revoke_header *revoke_hdr =
 		(struct jbd_revoke_header *)header;
 	uint32_t i, nr_entries, record_len = 4;
+	uint32_t count = jbd_get32(revoke_hdr, count);
+	uint32_t usable = jbd_get32(&jbd_fs->sb, blocksize);
 
 	/* If we are working on a 64bit jbd filesystem, */
 	if (JBD_HAS_INCOMPAT_FEATURE(&jbd_fs->sb,
 				     JBD_FEATURE_INCOMPAT_64BIT))
 		record_len = 8;
 
-	nr_entries = (jbd_get32(revoke_hdr, count) -
-			sizeof(struct jbd_revoke_header)) /
+	/* The count is the bytes the block uses, header included, and comes
+	 * from disk: one past the block (less its checksum tail) would read
+	 * records beyond the buffer (#201). */
+	if (jbd_has_csum(&jbd_fs->sb))
+		usable -= sizeof(struct jbd_block_tail);
+	if (count < sizeof(struct jbd_revoke_header) || count > usable) {
+		ext4_dbg(DEBUG_JBD, DBG_WARN "Revoke block count %" PRIu32
+			 " does not fit a block of %" PRIu32 " bytes\n",
+			 count, usable);
+		return EIO;
+	}
+
+	nr_entries = (count - sizeof(struct jbd_revoke_header)) /
 			record_len;
 
 	blocks_entry = (char *)(revoke_hdr + 1);
@@ -1069,6 +1083,7 @@ static void jbd_build_revoke_tree(struct jbd_fs *jbd_fs,
 		}
 		blocks_entry += record_len;
 	}
+	return EOK;
 }
 
 static void jbd_debug_descriptor_block(struct jbd_fs *jbd_fs,
@@ -1228,9 +1243,16 @@ static int jbd_iterate_log(struct jbd_fs *jbd_fs,
 					    "trans_id: %" PRIu32"\n",
 					    this_block, this_trans_id);
 			if (action == ACTION_REVOKE) {
+				int rc;
 				info->this_trans_id = this_trans_id;
-				jbd_build_revoke_tree(jbd_fs,
+				rc = jbd_build_revoke_tree(jbd_fs,
 						header, info);
+				/* Without its revokes the replay would write
+				 * blocks the journal cancelled. */
+				if (rc != EOK) {
+					r = rc;
+					log_end = true;
+				}
 			}
 			break;
 		default:
