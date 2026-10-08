@@ -62,14 +62,12 @@ int main(int argc, char **argv)
 	test_umount();
 	fsck(image);
 
-	/* The extents are freed in order. The first write of the descriptor
-	 * block is group 0's (first extent), the second group 1's, in the
-	 * middle of the extent across groups 1 and 2: fail that one. */
+	/* The first write of the descriptor block is group 1's, in the
+	 * middle of the extent: fail that one. */
 	file_dev_name_set(fault);
 	TEST_ASSERT_EQ(EOK, ext4_device_register(fault_dev_wrap(file_dev_get()),
 						 TEST_DEV));
 	fault_dev_fail_range(FAULT_DEV_WRITE, GDT_OFF, 1024);
-	fault_dev_state.nth = 2;
 	fault_dev_state.count = 1;
 	TEST_ASSERT_EQ(EOK, ext4_mount(TEST_DEV, TEST_MP, false));
 	TEST_ASSERT_EQ(1, fault_dev_failed());

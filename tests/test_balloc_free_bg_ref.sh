@@ -1,13 +1,26 @@
 # SPDX-License-Identifier: BSD-3-Clause
-# ext4, 1 KiB blocks, 1024 blocks per group, flex_bg: a deleted 3 MiB file
-# left on the orphan list, whose second extent runs from group 1 into
-# group 2. All the group descriptors are in block 2.
-dir="$1.d"
-mkdir -p "$dir"
-awk 'BEGIN { for (i = 0; i < 3145728; i++) printf "%c", 65 + i % 26 }' >"$dir/big"
-lwext4_mke2fs -t ext4 -b 1024 -g 1024 -O ^has_journal,^resize_inode \
-	-d "$dir" "$1" 8M
-debugfs -R 'stat /big' "$1" 2>/dev/null | grep -q '(480-2525):1027-3072' ||
+# ext4, 1 KiB blocks, 1024 blocks per group, flex_bg: a deleted file left on
+# the orphan list, with one extent of 2046 blocks from group 1 into group 2
+# (blocks 1027-3072, after group 1's backup superblock and descriptors).
+# The extent is written into the inode by hand, so where mke2fs would have
+# put the data does not matter. All the group descriptors are in block 2.
+lwext4_mke2fs -t ext4 -b 1024 -g 1024 -O ^has_journal,^resize_inode "$1" 8M
+: >"$1.empty"
+debugfs -w -f - "$1" >/dev/null 2>&1 <<CMDS
+write $1.empty big
+sif /big block[0] 0x0001f30a
+sif /big block[1] 0x00000004
+sif /big block[2] 0
+sif /big block[3] 0
+sif /big block[4] 2046
+sif /big block[5] 1027
+sif /big size 2095104
+setb 1027 2046
+CMDS
+rm -f "$1.empty"
+# Block counts of the inode and the groups (exit status 1: fixed)
+e2fsck -fy "$1" >/dev/null 2>&1 || [ $? -eq 1 ]
+debugfs -R 'stat /big' "$1" 2>/dev/null | grep -q '(0-2045):1027-3072' ||
 	{ echo "big: no extent across groups 1 and 2" >&2; exit 1; }
 debugfs -w -f - "$1" >/dev/null 2>&1 <<CMDS
 unlink /big
