@@ -2503,8 +2503,19 @@ static int __jbd_journal_commit_trans(struct jbd_journal *journal,
 	}
 Finish:
 	if (rc != EOK) {
+		struct ext4_fs *fs = journal->jbd_fs->inode_ref.fs;
+
 		journal->last = last;
 		jbd_journal_free_trans(journal, trans, true);
+		/* jbd_journal_prepare() has already handed blocks of this
+		 * transaction back to earlier ones without restoring their
+		 * contents (revoked blocks, dropped from the cache): the
+		 * cache cannot be trusted any more, like after a failed
+		 * write (jbd_trans_restore_failed()). The committed
+		 * transactions stay in the journal for replay. */
+		if (journal->error == EOK)
+			journal->error = rc;
+		fs->read_only = true;
 	}
 	return rc;
 }
