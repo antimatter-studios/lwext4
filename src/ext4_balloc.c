@@ -296,8 +296,11 @@ int ext4_balloc_free_blocks(struct ext4_inode_ref *inode_ref,
 				"Group: %" PRIu32"\n",
 				bg_ref.index);
 		}
+		/* The group can be smaller than its bitmap (mke2fs -g, or the
+		 * last group): the rest of the range is in the next group. */
 		uint32_t free_cnt;
-		free_cnt = ext4_sb_get_block_size(sb) * 8 - idx_in_bg_first;
+		free_cnt = ext4_blocks_in_group_cnt(sb, bg_first) -
+			   idx_in_bg_first;
 
 		/*If last block, free only count blocks*/
 		free_cnt = count > free_cnt ? free_cnt : count;
@@ -338,10 +341,13 @@ int ext4_balloc_free_blocks(struct ext4_inode_ref *inode_ref,
 		ext4_bg_set_free_blocks_count(bg, sb, free_blocks);
 		bg_ref.dirty = true;
 
-		/* Release block group reference */
-		rc = ext4_fs_put_block_group_ref(&bg_ref);
-		if (rc != EOK)
-			break;
+		/* Release block group reference. A failed write of the
+		 * descriptor does not undo the change: the block stays dirty
+		 * in the cache and is written again later. Returning the
+		 * error here would leave the rest of the range allocated, and
+		 * the caller, which keeps the extent on an error, would free
+		 * this group's share a second time. */
+		ext4_fs_put_block_group_ref(&bg_ref);
 
 		bg_first++;
 	}
