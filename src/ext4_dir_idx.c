@@ -927,16 +927,65 @@ ext4_dir_dx_insert_entry(struct ext4_inode_ref *inode_ref __unused,
 	ext4_trans_set_block_dirty(index_block->b.buf);
 }
 
+/**@brief Append a block to the directory for its index tree (the new leaf
+ *        of a split, or a new index node) and get it without reading it.
+ *        A damaged block bitmap can say that a block of the tree is free,
+ *        and the allocator then hands it out. If it is one this addition
+ *        holds, an index node of the path or the leaf, filling the new
+ *        block overwrites it while it is in use (fork issue #211: a split
+ *        wrote directory entries over the root, whose count then sized a
+ *        memmove). Such a block is refused with EIO, and the directory
+ *        keeps its size: readers see it as it was. The block stays
+ *        allocated (it is in use), mapped past the end.
+ * @param ino_ref Directory i-node
+ * @param dx_blks Path from the root (dx_blks[0]) to the last index node
+ * @param leaf    The leaf the addition goes to
+ * @param b       Output: the new block
+ * @param iblk    Output: its logical number
+ * @return Error code*/
+static int ext4_dir_dx_append_block(struct ext4_inode_ref *ino_ref,
+				    struct ext4_dir_idx_block *dx_blks,
+				    ext4_fsblk_t leaf, struct ext4_block *b,
+				    uint32_t *iblk)
+{
+	struct ext4_dir_idx_root *root = (void *)dx_blks[0].b.data;
+	struct ext4_sblock *sb = &ino_ref->fs->sb;
+	uint64_t size = ext4_inode_get_size(sb, ino_ref->inode);
+	bool held = false;
+	ext4_fsblk_t fblk;
+	uint8_t i;
+	int r;
+
+	r = ext4_fs_append_inode_dblk(ino_ref, &fblk, iblk);
+	if (r != EOK)
+		return r;
+
+	for (i = 0; i <= root->info.indirect_levels; i++)
+		held |= dx_blks[i].b.lb_id == fblk;
+	if (held || fblk == leaf) {
+		ext4_dbg(DEBUG_DIR_IDX, DBG_WARN "New block %" PRIu64
+			 " of i-node %" PRIu32 " is in use by its index\n",
+			 fblk, ino_ref->index);
+		ext4_inode_set_size(ino_ref->inode, size);
+		ino_ref->dirty = true;
+		return EIO;
+	}
+
+	return ext4_trans_block_get_noread(ino_ref->fs->bdev, b, fblk);
+}
+
 /**@brief Split directory entries to two parts preventing node overflow.
  * @param inode_ref      Directory i-node
  * @param hinfo          Hash info
  * @param old_data_block Block with data to be split
+ * @param dx_blks        Path from the root to index_block
  * @param index_block    Block where index entries are located
  * @param new_data_block Output value for newly allocated data block
  */
 static int ext4_dir_dx_split_data(struct ext4_inode_ref *inode_ref,
 				  struct ext4_hash_info *hinfo,
 				  struct ext4_block *old_data_block,
+				  struct ext4_dir_idx_block *dx_blks,
 				  struct ext4_dir_idx_block *index_block,
 				  struct ext4_block *new_data_block)
 {
@@ -1006,19 +1055,11 @@ static int ext4_dir_dx_split_data(struct ext4_inode_ref *inode_ref,
 	      ext4_dir_dx_entry_comparator);
 
 	/* Allocate new block for store the second part of entries */
-	ext4_fsblk_t new_fblock;
 	uint32_t new_iblock;
-	rc = ext4_fs_append_inode_dblk(inode_ref, &new_fblock, &new_iblock);
-	if (rc != EOK) {
-		ext4_free(sort);
-		ext4_free(entry_buffer);
-		return rc;
-	}
-
-	/* Load new block */
 	struct ext4_block new_data_block_tmp;
-	rc = ext4_trans_block_get_noread(inode_ref->fs->bdev, &new_data_block_tmp,
-				   new_fblock);
+	rc = ext4_dir_dx_append_block(inode_ref, dx_blks,
+				      old_data_block->lb_id,
+				      &new_data_block_tmp, &new_iblock);
 	if (rc != EOK) {
 		ext4_free(sort);
 		ext4_free(entry_buffer);
@@ -1145,10 +1186,12 @@ static void ext4_dir_dx_set_dirty(struct ext4_inode_ref *ino_ref,
  * @param dxbp    The node (in dx_blks); afterwards the node of the path
  *                that has the room: a new level shifts the path down by
  *                one, a split may continue the path in the new half.
+ * @param leaf    The leaf the addition goes to
  * @return Error code, ENOSPC if the tree cannot grow*/
 static int ext4_dir_dx_make_room(struct ext4_inode_ref *ino_ref,
 				 struct ext4_dir_idx_block *dx_blks,
-				 struct ext4_dir_idx_block **dxbp)
+				 struct ext4_dir_idx_block **dxbp,
+				 ext4_fsblk_t leaf)
 {
 	struct ext4_sblock *sb = &ino_ref->fs->sb;
 	struct ext4_dir_idx_block *dxb = *dxbp;
@@ -1157,7 +1200,6 @@ static int ext4_dir_dx_make_room(struct ext4_inode_ref *ino_ref,
 	uint16_t node_limit = ext4_dir_dx_node_limit(sb);
 	struct ext4_dir_idx_entry *e, *new_en;
 	struct ext4_dir_idx_node *new_node;
-	ext4_fsblk_t new_fblk;
 	uint32_t new_iblk;
 	uint16_t count;
 	struct ext4_block b;
@@ -1169,7 +1211,7 @@ static int ext4_dir_dx_make_room(struct ext4_inode_ref *ino_ref,
 	if (dxb != dx_blks) {
 		struct ext4_dir_idx_block *parent = dxb - 1;
 
-		r = ext4_dir_dx_make_room(ino_ref, dx_blks, &parent);
+		r = ext4_dir_dx_make_room(ino_ref, dx_blks, &parent, leaf);
 		if (r != EOK)
 			return r;
 		/* A new level under the root shifted the path */
@@ -1178,11 +1220,7 @@ static int ext4_dir_dx_make_room(struct ext4_inode_ref *ino_ref,
 		return ENOSPC;
 	}
 
-	r = ext4_fs_append_inode_dblk(ino_ref, &new_fblk, &new_iblk);
-	if (r != EOK)
-		return r;
-
-	r = ext4_trans_block_get_noread(ino_ref->fs->bdev, &b, new_fblk);
+	r = ext4_dir_dx_append_block(ino_ref, dx_blks, leaf, &b, &new_iblk);
 	if (r != EOK)
 		return r;
 
@@ -1308,7 +1346,7 @@ int ext4_dir_dx_add_entry(struct ext4_inode_ref *parent,
 	 * Check if there is needed to split index node
 	 * (and recursively also parent nodes)
 	 */
-	r = ext4_dir_dx_make_room(parent, dx_blks, &dx_blk);
+	r = ext4_dir_dx_make_room(parent, dx_blks, &dx_blk, leaf_block_addr);
 	if (r != EOK)
 		goto release_index; /* target_block is not loaded yet */
 
@@ -1335,8 +1373,8 @@ int ext4_dir_dx_add_entry(struct ext4_inode_ref *parent,
 
 	/* Split entries to two blocks (includes sorting by hash value) */
 	struct ext4_block new_block;
-	r = ext4_dir_dx_split_data(parent, &hinfo, &target_block, dx_blk,
-				    &new_block);
+	r = ext4_dir_dx_split_data(parent, &hinfo, &target_block, dx_blks,
+				   dx_blk, &new_block);
 	if (r != EOK) {
 		rc2 = r;
 		goto release_target_index;

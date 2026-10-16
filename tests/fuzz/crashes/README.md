@@ -29,6 +29,7 @@ on every pull request, so the bug stays fixed. They are gzipped (`gzip -9
 | `203-xattr-ibody-entry-past-end.gz` | fuzz_partition | #203: an in-inode xattr entry whose first four bytes end the inode was read past it (`ext4_xattr_is_ibody_valid`, heap-buffer-overflow) |
 | `202-dir-size-past-32bit-blocks.gz` | fuzz_mount | #202: listing a directory whose damaged size reaches past block 2^32 wrapped the block index to 0 and skipped holes forever (a timeout) |
 | `207-journal-commit-fail-revoke.gz` | fuzz_rwx | #207: a transaction that freed a block journalled by the one before failed to commit (a hole in the journal inode); the block was read back clean and `ext4_journal_stop` waited for it forever (a timeout) |
+| `211-dx-split-new-block-in-use.gz` | fuzz_rwx | #211: a symlink shared its block with the htree root of a directory; removing the symlink freed it, a split in the directory got it as its new leaf and wrote entries over the root, whose count then sized a memmove (`ext4_dir_dx_insert_entry`, heap-buffer-overflow) |
 | `mount-before-2026-10-04-ce41bd70.gz` | fuzz_mount | found on 2026-10-01 by the harness before it was in the repository; fixed on main by 2026-10-04 (not bisected) |
 
 Some crashes need the state an earlier input left behind and do not
