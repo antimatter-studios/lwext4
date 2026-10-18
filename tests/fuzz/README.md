@@ -14,10 +14,11 @@ UndefinedBehaviorSanitizer, with leak checks:
 
 `fuzz_common.h` has the RAM block device over a copy of the input, with
 fault injection, and the bounded tree walk; at the end of every input it
-unmounts whatever is still mounted and stops if that fails, so no state
-passes to the next input. `fuzz_ops.h` has the operations `fuzz_rw` and
-`fuzz_rwx` share. [ext4.dict](ext4.dict) gives libFuzzer the magic
-numbers and names of the format.
+unmounts whatever is still mounted and stops if that fails, and takes the
+device out of write-back mode, so no state passes to the next input.
+`fuzz_ops.h` has the operations `fuzz_rw` and `fuzz_rwx` share.
+[ext4.dict](ext4.dict) gives libFuzzer the magic numbers and names of the
+format.
 
 Inputs
 ------

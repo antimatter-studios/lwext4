@@ -102,6 +102,10 @@ static void unmount_all(void)
 static void ram_unload(void)
 {
 	unmount_all();
+	/* The device counts ext4_cache_write_back() calls, and unmounting
+	 * keeps the count: an input that turned write-back mode on more
+	 * often than off would leave the next one in it (fork issue #217). */
+	ram.cache_write_back = 0;
 	free(img);
 	img = NULL;
 	img_len = 0;
