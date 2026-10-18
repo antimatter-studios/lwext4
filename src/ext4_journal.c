@@ -1748,6 +1748,54 @@ static void jbd_trans_restore_failed(struct jbd_journal *journal,
 	fs->read_only = true;
 }
 
+/*
+ * Put the committed version of a block back into the cache, from its copy
+ * in the journal: jbd_buf, of the last transaction that committed the
+ * block, still waits for it to be written. The cache lost it to an aborted
+ * transaction, which changed the block or freed it.
+ */
+static void jbd_trans_restore_committed(struct jbd_journal *journal,
+					struct jbd_block_rec *block_rec,
+					struct jbd_buf *jbd_buf)
+{
+	struct ext4_fs *fs = journal->jbd_fs->inode_ref.fs;
+	struct ext4_block jbd_block = EXT4_BLOCK_ZERO(),
+			  block = EXT4_BLOCK_ZERO();
+	bool dont_shake = fs->bdev->bc->dont_shake;
+	int r = journal->error;
+
+	/* Getting the blocks must not make room in the cache by writing
+	 * dirty buffers: those of the aborted transaction may still be
+	 * among them, and their end_write callbacks would take them for
+	 * written. */
+	fs->bdev->bc->dont_shake = true;
+	if (r == EOK)
+		r = ext4_block_get_noread(fs->bdev, &block, block_rec->lba);
+	if (r == EOK) {
+		r = jbd_block_get(journal->jbd_fs, &jbd_block,
+				  jbd_buf->jbd_lba);
+		if (r != EOK)
+			ext4_block_set(fs->bdev, &block);
+	}
+	fs->bdev->bc->dont_shake = dont_shake;
+	if (r != EOK) {
+		jbd_trans_restore_failed(journal, block_rec, jbd_buf, r);
+		return;
+	}
+	memcpy(block.data, jbd_block.data, journal->block_size);
+
+	jbd_trans_change_ownership(block_rec, jbd_buf->trans);
+
+	block.buf->end_write = jbd_trans_end_write;
+	block.buf->end_write_arg = jbd_buf;
+
+	ext4_bcache_set_flag(jbd_block.buf, BC_TMP);
+	ext4_bcache_set_dirty(block.buf);
+
+	ext4_block_set(fs->bdev, &jbd_block);
+	ext4_block_set(fs->bdev, &block);
+}
+
 static void
 jbd_trans_finish_callback(struct jbd_journal *journal,
 			  const struct jbd_trans *trans,
@@ -1776,44 +1824,12 @@ jbd_trans_finish_callback(struct jbd_journal *journal,
 		 * aborted.
 		 */
 		struct jbd_buf *jbd_buf;
-		struct ext4_block jbd_block = EXT4_BLOCK_ZERO(),
-				  block = EXT4_BLOCK_ZERO();
 		jbd_buf = TAILQ_LAST(&block_rec->dirty_buf_queue,
 				jbd_buf_dirty);
 		if (jbd_buf) {
 			if (!revoke) {
-				int r = journal->error;
-
-				if (r == EOK)
-					r = ext4_block_get_noread(fs->bdev,
-							&block,
-							block_rec->lba);
-				if (r == EOK) {
-					r = jbd_block_get(journal->jbd_fs,
-							&jbd_block,
-							jbd_buf->jbd_lba);
-					if (r != EOK)
-						ext4_block_set(fs->bdev, &block);
-				}
-				if (r != EOK) {
-					jbd_trans_restore_failed(journal,
-							block_rec, jbd_buf, r);
-					return;
-				}
-				memcpy(block.data, jbd_block.data,
-						journal->block_size);
-
-				jbd_trans_change_ownership(block_rec,
-						jbd_buf->trans);
-
-				block.buf->end_write = jbd_trans_end_write;
-				block.buf->end_write_arg = jbd_buf;
-
-				ext4_bcache_set_flag(jbd_block.buf, BC_TMP);
-				ext4_bcache_set_dirty(block.buf);
-
-				ext4_block_set(fs->bdev, &jbd_block);
-				ext4_block_set(fs->bdev, &block);
+				jbd_trans_restore_committed(journal, block_rec,
+							    jbd_buf);
 				return;
 			} else {
 				/* The revoked buffer is yet written. */
@@ -1965,6 +1981,28 @@ void jbd_journal_free_trans(struct jbd_journal *journal,
 	struct jbd_revoke_rec *rec, *tmp2;
 	struct jbd_block_rec *block_rec, *tmp3;
 	struct ext4_fs *fs = journal->jbd_fs->inode_ref.fs;
+
+	/* Freeing a block revoked it and dropped it from the cache
+	 * (ext4_balloc_free_blocks()). If an earlier transaction committed
+	 * it and still waits for it to be written, that version is gone
+	 * from the cache, with the callback: the block is in use again and
+	 * would be read back from the disk without it, and the earlier
+	 * transaction would wait for it forever (fork issue #217). Put it
+	 * back. Blocks the transaction changed are put back below. */
+	if (abort) {
+		RB_FOREACH(rec, jbd_revoke_tree, &trans->revoke_root) {
+			block_rec = jbd_trans_block_rec_lookup(journal,
+							       rec->lba);
+			if (!block_rec || block_rec->trans == trans)
+				continue;
+			jbd_buf = TAILQ_LAST(&block_rec->dirty_buf_queue,
+					     jbd_buf_dirty);
+			if (jbd_buf)
+				jbd_trans_restore_committed(journal, block_rec,
+							    jbd_buf);
+		}
+	}
+
 	TAILQ_FOREACH_SAFE(jbd_buf, &trans->buf_queue, buf_node,
 			  tmp) {
 		block_rec = jbd_buf->block_rec;
