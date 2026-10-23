@@ -2094,17 +2094,18 @@ static int jbd_journal_prepare(struct jbd_journal *journal,
 	struct jbd_bhdr *bhdr = NULL;
 	void *data;
 
-	/* Try to remove any non-dirty buffers from the tail of
-	 * buf_queue. */
+	/* Remove every non-dirty buffer before writing any journal blocks.
+	 * On a damaged filesystem a freed block can overlap the journal:
+	 * writing the log would make its invalidated buffer dirty again,
+	 * without restoring the callback that completes its checkpoint. */
 	TAILQ_FOREACH_REVERSE_SAFE(jbd_buf, &trans->buf_queue,
 			jbd_trans_buf, buf_node, tmp) {
 		struct jbd_revoke_rec tmp_rec = {
 			.lba = jbd_buf->block_rec->lba
 		};
-		/* We stop the iteration when we find a dirty buffer. */
 		if (ext4_bcache_test_flag(jbd_buf->block.buf,
 					BC_DIRTY))
-			break;
+			continue;
 	
 		TAILQ_REMOVE(&jbd_buf->block_rec->dirty_buf_queue,
 			jbd_buf,
