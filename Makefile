@@ -3,22 +3,9 @@
 #Debug
 BUILD_TYPE = Release
 
-ifneq ($(shell test -d .git), 0)
-GIT_SHORT_HASH:= $(shell git rev-parse --short HEAD 2>/dev/null)
-endif
-
-VERSION_MAJOR = 1
-VERSION_MINOR = 0
-VERSION_PATCH = 0
-
-VERSION = $(VERSION_MAJOR).$(VERSION_MINOR).$(VERSION_PATCH)-$(GIT_SHORT_HASH)
-
+# The version comes from the release tag (cmake/version.cmake)
 COMMON_DEFINITIONS =                                      \
 	-DCMAKE_BUILD_TYPE=$(BUILD_TYPE)                      \
-	-DVERSION_MAJOR=$(VERSION_MAJOR)                      \
-	-DVERSION_MINOR=$(VERSION_MINOR)                      \
-	-DVERSION_PATCH=$(VERSION_PATCH)                      \
-	-DVERSION=$(VERSION)                                  \
 
 define generate_common
 	rm -R -f build_$(1)

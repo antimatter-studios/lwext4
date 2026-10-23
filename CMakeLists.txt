@@ -1,6 +1,10 @@
 project(lwext4 C)
 cmake_minimum_required(VERSION 3.4)
 
+# The version: the release tag (cmake/version.cmake)
+include(cmake/version.cmake)
+lwext4_project_version()
+
 option(LWEXT4_BUILD_TESTS "Build the regression tests (generic, bare-metal and simulator targets)" ON)
 set(LWEXT4_SANITIZE "" CACHE STRING
     "Comma separated -fsanitize= list for all targets, e.g. address,undefined")
@@ -25,7 +29,7 @@ include_directories(blockdev/filedev_win)
 set(BLOCKDEV_TYPE  none)
 
 add_definitions(-DCONFIG_USE_DEFAULT_CONFIG=0)
-add_definitions(-DVERSION="${VERSION}")
+add_definitions(-DVERSION="${LWEXT4_VERSION_STRING}")
 
 #Examples
 if    (CMAKE_SYSTEM_PROCESSOR STREQUAL  cortex-m0)

@@ -19,8 +19,7 @@ configure()
 {
 	cmake -S . -B "$1" -DCMAKE_TOOLCHAIN_FILE=toolchain/mingw.cmake \
 		-DCMAKE_CROSSCOMPILING_EMULATOR=wine \
-		-DCMAKE_BUILD_TYPE=Release -DLWEXT4_BUILD_SHARED_LIB="$2" \
-		-DVERSION="$version"
+		-DCMAKE_BUILD_TYPE=Release -DLWEXT4_BUILD_SHARED_LIB="$2"
 }
 
 # Static library, headers, tools.

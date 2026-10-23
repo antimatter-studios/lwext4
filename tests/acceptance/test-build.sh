@@ -74,7 +74,7 @@ step "BSD-3-Clause build without the GPLv2 files"
 bsd="$WORK/bsd-src"
 rm -rf "$bsd"
 mkdir -p "$bsd"
-cp -R CMakeLists.txt src include blockdev toolchain "$bsd/"
+cp -R CMakeLists.txt cmake src include blockdev toolchain "$bsd/"
 while read -r f; do
 	rm "$bsd/src/$f"
 done <"$WORK/actual-gpl.txt"

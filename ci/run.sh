@@ -88,11 +88,14 @@ run_in()
 		prio="--cpu-shares 2 --blkio-weight 10"
 		nice="nice -n 19"
 	fi
+	# The version of the tree, from git on the host (ci/scripts/version.sh)
+	. "$root/ci/scripts/version.sh"
+	version=$(ci_version "$root")
 	docker run --rm $tty ${platform:+--platform "$platform"} $prio \
 		-v "$root":/src -w /src \
 		-u "$(id -u):$(id -g)" -e HOME=/tmp \
 		-e CI="${CI:-}" -e GITHUB_ACTIONS="${GITHUB_ACTIONS:-}" \
-		-e CI_JOBS="${CI_JOBS:-}" \
+		-e CI_JOBS="${CI_JOBS:-}" -e LWEXT4_VERSION="$version" \
 		"$tag" $nice "$@"
 }
 

@@ -96,3 +96,22 @@ if(NOT CMAKE_CROSSCOMPILING)
                      ${PROJECT_SOURCE_DIR} ${CMAKE_C_COMPILER}
                      "${CMAKE_C_FLAGS}" "${CMAKE_EXE_LINKER_FLAGS}")
 endif()
+
+# The version comes from the release tag (cmake/version.cmake): what needs
+# no git, and with git, which the README does not ask for (version_git is
+# skipped without it).
+foreach(cases plain git)
+    if(cases STREQUAL plain)
+        set(test_name version)
+    else()
+        set(test_name version_git)
+    endif()
+    add_test(NAME ${test_name}
+             COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${PROJECT_SOURCE_DIR}
+                     -DWORK=${LWEXT4_TEST_TMPDIR}/${test_name} -DCASES=${cases}
+                     -P ${CMAKE_CURRENT_SOURCE_DIR}/version.cmake)
+endforeach()
+if(NOT CMAKE_VERSION VERSION_LESS 3.16)
+    set_tests_properties(version_git PROPERTIES
+                         SKIP_REGULAR_EXPRESSION "git not found: skipped")
+endif()

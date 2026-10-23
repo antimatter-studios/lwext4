@@ -9,7 +9,7 @@ includedir=${prefix}/include
 
 Name: lwext4
 Description: ext2/ext3/ext4 filesystem library for microcontrollers
-URL: https://github.com/gkostka/lwext4
+URL: https://github.com/antimatter-studios/lwext4
 Version: @LWEXT4_PACKAGE_VERSION@
 Libs: -L${libdir} -lblockdev -llwext4
 Cflags: -I${includedir}/lwext4

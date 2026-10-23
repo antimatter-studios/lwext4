@@ -6,10 +6,11 @@
 > - **Docs:** the [project site](https://antimatter-studios.github.io/lwext4/):
 >   this README, the API reference, the build options, every regression
 >   test and fuzzer crash input with its issue, the CI jobs, benchmarks.
-> - **Releases:** `v1.0.1-am.<n>` tags on `main`. A tag runs the whole CI
->   matrix and publishes, only if every job passes: libraries for Linux
->   (9 architectures), Windows and Cortex-M, the example firmware, test
->   results and the list of changes.
+> - **Releases:** `vMAJOR.MINOR.PATCH` tags on `main` (semantic
+>   versioning; the tag is the version the library and its packages
+>   report). A tag runs the whole CI matrix and publishes, only if every
+>   job passes: libraries for Linux (9 architectures), Windows and
+>   Cortex-M, the example firmware, test results and the list of changes.
 > - **Requests, bugs, questions:** [open an issue](https://github.com/antimatter-studios/lwext4/issues).
 
 [![CI](https://github.com/antimatter-studios/lwext4/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/antimatter-studios/lwext4/actions/workflows/ci.yml?query=branch%3Amain)
