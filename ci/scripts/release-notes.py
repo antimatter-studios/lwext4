@@ -5,7 +5,8 @@
 Usage: release-notes.py <tag> <dist dir> <ci run url>
 
 Writes <dist>/MANIFEST.md (the changes since the previous release tag: the
-pull requests merged into main, or the commits for direct pushes),
+pull requests merged or squash-merged into main, or the commits for direct
+pushes),
 <dist>/TEST-REPORT.md (totals of every CTest JUnit file in <dist>) and
 <dist>/RELEASE-NOTES.md. Exits non-zero if any test in the reports failed
 or errored.
@@ -60,6 +61,9 @@ def manifest(tag):
             continue
         m = re.match(r"Merge pull request #(\d+) from [^/]+/(\S+)", subject)
         b = re.match(r"Merge branch '([^']+)'", subject)
+        # A squash merge is one commit, "<title> (#N)": it does not record
+        # the branch.
+        s = re.match(r"(.*) \(#(\d+)\)$", subject)
         if m:
             title = body.strip().splitlines()[0] if body.strip() else ""
             rows.append(("#" + m.group(1), m.group(2), title))
@@ -67,6 +71,8 @@ def manifest(tag):
             head = git("rev-parse", sha + "^2")
             rows.append((head[:12], b.group(1),
                          git("log", "-1", "--format=%s", head)))
+        elif s:
+            rows.append(("#" + s.group(2), "", s.group(1)))
         else:
             rows.append((sha[:12], "", subject))
     head = ("Changes since %s:" % prev) if prev else ("All changes up to %s:"
