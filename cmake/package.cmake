@@ -17,16 +17,7 @@
 
 include(CMakePackageConfigHelpers)
 
-# The Makefile passes the version; plain cmake builds get the same default.
-foreach(part MAJOR MINOR PATCH)
-    if(NOT DEFINED VERSION_${part} OR VERSION_${part} STREQUAL "")
-        if(part STREQUAL MAJOR)
-            set(VERSION_${part} 1)
-        else()
-            set(VERSION_${part} 0)
-        endif()
-    endif()
-endforeach()
+# The release tag's version (cmake/version.cmake)
 set(LWEXT4_PACKAGE_VERSION ${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH})
 
 set(LWEXT4_CMAKE_DIR lib/cmake/lwext4)

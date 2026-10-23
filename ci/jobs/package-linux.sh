@@ -41,8 +41,7 @@ configure()
 		-DCMAKE_TOOLCHAIN_FILE=toolchain/linux-cross.cmake \
 		-DCROSS_TRIPLE="$triple" -DCROSS_EMULATOR="$qemu" \
 		-DCROSS_SYSROOT="/usr/$triple" -DCROSS_LDFLAGS="$ldflags" \
-		-DCMAKE_BUILD_TYPE=Release -DLWEXT4_BUILD_SHARED_LIB="$2" \
-		-DVERSION="$version"
+		-DCMAKE_BUILD_TYPE=Release -DLWEXT4_BUILD_SHARED_LIB="$2"
 }
 
 # Static library, headers, tools (linked statically against lwext4).

@@ -17,7 +17,7 @@ mkdir -p "$stage/test-results"
 for cpu in cortex-m0 cortex-m0+ cortex-m3 cortex-m4 cortex-m4f cortex-m7; do
 	build=$(ci_build_dir "package-$cpu")
 	cmake -S . -B "$build" -DCMAKE_TOOLCHAIN_FILE="toolchain/$cpu.cmake" \
-		-DCMAKE_BUILD_TYPE=Release -DVERSION="$version"
+		-DCMAKE_BUILD_TYPE=Release
 	cmake --build "$build" -j"$(ci_jobs)"
 	ctest --test-dir "$build" \
 		--output-junit "$stage/test-results/ctest-$cpu.xml"

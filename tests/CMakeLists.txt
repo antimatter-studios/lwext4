@@ -96,3 +96,9 @@ if(NOT CMAKE_CROSSCOMPILING)
                      ${PROJECT_SOURCE_DIR} ${CMAKE_C_COMPILER}
                      "${CMAKE_C_FLAGS}" "${CMAKE_EXE_LINKER_FLAGS}")
 endif()
+
+# The version comes from the release tag (cmake/version.cmake).
+add_test(NAME version
+         COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${PROJECT_SOURCE_DIR}
+                 -DWORK=${LWEXT4_TEST_TMPDIR}/version
+                 -P ${CMAKE_CURRENT_SOURCE_DIR}/version.cmake)

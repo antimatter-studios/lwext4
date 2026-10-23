@@ -55,8 +55,25 @@ Pull requests
 Releases
 --------
 
-Tag a commit of `main` as `v<next upstream patch>-am.<n>` (see the
-README) and push the tag. The release workflow runs the whole CI matrix
-on it, builds the packages and publishes the release, with a manifest of
-the pull requests merged since the previous release, only if every job
-passed.
+Releases are numbered `vMAJOR.MINOR.PATCH`, by semantic versioning from
+the previous release: the patch for fixes only, the minor for new
+features, the major for changes that break the API. Once `main` is green
+after a fix, release it: tag the commit of `main` and push the tag,
+
+```sh
+git tag -a v1.1.1 -m "lwext4 v1.1.1" <commit>
+git push origin v1.1.1
+```
+
+The tag is the version, and it is written nowhere else: the build takes it
+from `git describe` (or, in a source archive, from `cmake/version.txt`,
+which `git archive` fills in; `-DLWEXT4_VERSION=` for a build with
+neither), and the library's CMake package, `lwext4.pc`, the tools'
+`--version` and the package names all report it (`cmake/version.cmake`).
+Between releases a build reports `<tag>-<commits since>-g<hash>`.
+
+The release workflow refuses a tag that is not `vMAJOR.MINOR.PATCH`,
+runs the whole CI matrix on it, builds the packages and publishes the
+release, with a manifest of the pull requests merged since the previous
+release, only if every job passed and every package is of the tag's
+version.

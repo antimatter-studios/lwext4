@@ -1,10 +1,12 @@
 # SPDX-License-Identifier: BSD-3-Clause
 #
-# Release of a `main` build. Push a tag v<upstream next patch>-am.<n>
-# (e.g. v1.0.1-am.4, see README) on a commit of `main`: the whole CI
+# Release of a `main` build. Push a tag vMAJOR.MINOR.PATCH (semantic
+# versioning, see CONTRIBUTING.md) on a commit of `main`: the whole CI
 # matrix runs on the tag, the release packages are built (each one running
-# its own CTest suite), and only if every job passed is the GitHub release
-# published with the packages, JUnit test results, test report and manifest.
+# its own CTest suite, and taking its version from the tag), and only if
+# every job passed and every package is of the tag's version is the GitHub
+# release published with the packages, JUnit test results, test report and
+# manifest.
 name: Release
 
 on:
@@ -15,13 +17,23 @@ permissions:
   contents: read
 
 jobs:
+  # A tag that is not vMAJOR.MINOR.PATCH stops here, before the matrix.
+  tag:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - run: ci/scripts/release-version.sh "$GITHUB_REF_NAME"
+
   ci:
+    needs: tag
     uses: ./.github/workflows/ci.yml
     with:
       ref: ${{ github.ref }}
 
   package-linux:
     name: package / linux-${{ matrix.arch }}
+    needs: tag
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     strategy:
@@ -41,6 +53,7 @@ jobs:
 
   package:
     name: package / ${{ matrix.job }}
+    needs: tag
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     strategy:
@@ -62,6 +75,7 @@ jobs:
   # the SD-over-SPI builds for real boards, flashable images per variant.
   package-esp32:
     name: package / esp-idf ${{ matrix.variant }}
+    needs: tag
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     strategy:
@@ -96,6 +110,7 @@ jobs:
   # and tested in Renode per board, flashable images per board.
   package-baremetal-sdcard:
     name: package / baremetal-sdcard ${{ matrix.board }}
+    needs: tag
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     strategy:
@@ -125,6 +140,7 @@ jobs:
   # in QEMU per board, flashable images per board.
   package-zephyr:
     name: package / zephyr ${{ matrix.board }}
+    needs: tag
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     strategy:
@@ -169,6 +185,8 @@ jobs:
           path: build-ci/dist
           pattern: dist-*
           merge-multiple: true
+      - name: Every package is of the tag's version
+        run: ci/scripts/release-version.sh "$GITHUB_REF_NAME" build-ci/dist
       - name: Manifest, test report, notes
         run: |
           python3 ci/scripts/release-notes.py "$GITHUB_REF_NAME" build-ci/dist \

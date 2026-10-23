@@ -38,6 +38,9 @@ cmake --version | head -n 1
 mke2fs -V 2>&1 | head -n 1
 
 . ci/scripts/common.sh
+. ci/scripts/version.sh
+LWEXT4_VERSION=$(ci_version .)
+export LWEXT4_VERSION
 build=$(ci_build_dir "macos-$variant")
 
 # LeakSanitizer is not supported on macOS; ASan and UBSan are.

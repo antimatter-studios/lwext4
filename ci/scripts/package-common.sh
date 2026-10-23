@@ -2,12 +2,13 @@
 # Helpers for the ci/jobs/package-*.sh release jobs (sourced after
 # common.sh). Packages go to build-ci/dist/.
 
-# Release version: the tag being built (v1.0.1-am.1 -> 1.0.1-am.1), or a
-# describe string for untagged commits.
+# Release version: LWEXT4_VERSION, which ci/run.sh takes from git describe
+# on the host (ci/scripts/version.sh): the tag being built (v1.1.0 ->
+# 1.1.0), or <tag>-<n>-g<hash> for untagged commits. The build takes the
+# same (cmake/version.cmake).
 pkg_version()
 {
-	v=$(git describe --tags --always --dirty 2>/dev/null || echo unknown)
-	echo "${v#v}"
+	echo "${LWEXT4_VERSION:-unknown}"
 }
 
 pkg_dist()
