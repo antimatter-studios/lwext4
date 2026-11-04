@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 #
-# macOS (arm64 and Intel, Apple clang and ld): library, fs_test tools and
-# the CTest suite, plus the e2fsprogs round trip (lwext4-mkfs -> e2fsck -fn and
+# macOS (arm64, Apple clang and ld): library, fs_test tools and the CTest
+# suite, plus the e2fsprogs round trip (lwext4-mkfs -> e2fsck -fn and
 # mke2fs -> lwext4-generic -> e2fsck -fn), and lwext4-mkfs on a disk
 # device (/dev/rdiskN of an image attached with hdiutil) -> e2fsck -fn.
 #
@@ -32,16 +32,12 @@ permissions:
 jobs:
   macos:
     name: macos / ${{ matrix.variant }}
-    runs-on: ${{ matrix.os }}
+    runs-on: macos-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - variant: clang
-            os: macos-latest
-          - variant: asan-ubsan
-            os: macos-15-intel
+        variant: [clang, asan-ubsan]
     steps:
       - uses: actions/checkout@v7
       - name: Install e2fsprogs, util-linux, pkgconf
