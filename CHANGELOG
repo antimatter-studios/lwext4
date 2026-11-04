@@ -1,3 +1,8 @@
+lwext4-1.1.1
+============
+* fix misaligned block group descriptors on read-write filesystem operations
+
+
 lwext4-1.0.0
 ============
 * new extent module implementation (handle unwritten extents correctly)

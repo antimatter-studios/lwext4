@@ -324,6 +324,7 @@ struct ext4_sblock {
 /*
  * Structure of a blocks group descriptor
  */
+#pragma pack(push, 1)
 struct ext4_bgroup {
 	uint32_t block_bitmap_lo;	    /* Blocks bitmap block */
 	uint32_t inode_bitmap_lo;	    /* Inodes bitmap block */
@@ -350,6 +351,7 @@ struct ext4_bgroup {
 	uint16_t inode_bitmap_csum_hi; /* crc32c(s_uuid+grp_num+ibitmap) BE */
 	uint32_t reserved;	     /* Padding */
 };
+#pragma pack(pop)
 
 
 #define EXT4_MIN_BLOCK_GROUP_DESCRIPTOR_SIZE 32
