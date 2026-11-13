@@ -2509,15 +2509,21 @@ int ext4_fwrite(ext4_file *file, const void *buf, size_t size, size_t *wcnt)
 	fblock_count = 0;
 	while (size >= block_size) {
 
-		while (iblk_idx < iblock_last) {
+		while (iblk_idx < iblock_last &&
+		       fblock_count < size / block_size) {
 			if (iblk_idx < ifile_blocks) {
 				r = ext4_fs_init_inode_dblk_idx(&ref, iblk_idx,
 								&fblk);
 				if (r != EOK)
 					break;
 			} else {
+				ext4_lblk_t want = iblk_idx;
 				rr = ext4_fs_append_inode_dblk(&ref, &fblk,
 							       &iblk_idx);
+				/* The append helper derives its logical block from i_size.
+				 * Refuse to write if a damaged size disagrees with fpos. */
+				if (rr == EOK && iblk_idx != want)
+					rr = EIO;
 				if (rr != EOK) {
 					/* Unable to append more blocks. But
 					 * some block might be allocated already
