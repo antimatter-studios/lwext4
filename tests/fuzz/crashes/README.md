@@ -34,6 +34,7 @@ on every pull request, so the bug stays fixed. They are gzipped (`gzip -9
 | `219-journal-prepare-freed-block.gz` | fuzz_rw | #219: the journal, the root directory and directory `d0` shared a block; creating a symlink added its entry to the block, then truncated the new symlink, whose damaged i-node mapped the block too, which freed it and dropped its buffer's change and write callback. Writing the journal block there made the buffer dirty again, so the commit journalled it with nothing to count it as written; once a lookup in `d0` read the block back clean, `ext4_journal_stop` waited for it forever (a timeout) |
 | `226-bg-descriptor-unaligned.gz` | fuzz_rwx | #226: a group descriptor at an unaligned byte offset was accessed through naturally aligned integer fields, triggering undefined behavior during block allocation |
 | `228-fwrite-append-size-wrap.gz` | fuzz_rw | #228: appending to a file with a damaged size made ext4_fwrite write beyond the supplied buffer |
+| `230-journal-tag-block-zero.gz` | fuzz_rw | #230: a journal tag for block 0 of a filesystem with 1 KiB blocks was replayed as the block holding the superblock, whose copy from offset 1024 started at the end of the buffer (`jbd_replay_block_tags`, heap-buffer-overflow) |
 | `mount-before-2026-10-04-ce41bd70.gz` | fuzz_mount | found on 2026-10-01 by the harness before it was in the repository; fixed on main by 2026-10-04 (not bisected) |
 
 Some crashes need the state an earlier input left behind and do not

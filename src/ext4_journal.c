@@ -942,6 +942,21 @@ static void jbd_replay_block_tags(struct jbd_fs *jbd_fs,
 		 "Replaying block in block_tag: %" PRIu64 "\n",
 		 tag_info->block);
 
+	/* Block 0 is replayed as the one holding the superblock, which it
+	 * only is with blocks over 1 KiB: with 1 KiB blocks the superblock is
+	 * block 1, offset 1024 is past the buffer (#230), and nothing the
+	 * journal logs lives in the boot block. The journal's block size is
+	 * the one of the buffers (jbd_get_fs); the size in fs->sb may have
+	 * been replayed over by an earlier tag. */
+	if (!tag_info->block &&
+	    jbd_get32(&jbd_fs->sb, blocksize) <
+	    EXT4_SUPERBLOCK_OFFSET + EXT4_SUPERBLOCK_SIZE) {
+		ext4_dbg(DEBUG_JBD, DBG_WARN "Journal tag for block 0, "
+			 "which does not hold the superblock\n");
+		r = EIO;
+		goto Finish;
+	}
+
 	r = jbd_block_get(jbd_fs, &journal_block, *this_block);
 	if (r != EOK)
 		goto Finish;
