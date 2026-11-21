@@ -93,7 +93,9 @@ def main():
 
     jobs = workflow["jobs"]
     docs = jobs["readme-docs"]
-    if "readme-docs" not in invocations(docs):
+    if docs.get("if") != "${{ !cancelled() }}":
+        raise SystemExit("FAIL: readme-docs must report unsuccessful dependencies")
+    if "readme-docs" not in invocations({"steps": docs["steps"]}):
         raise SystemExit("FAIL: CI does not run readme-docs")
 
     for command in sorted(documented | SUPPORTING_JOBS.keys()):

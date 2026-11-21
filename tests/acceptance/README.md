@@ -15,6 +15,9 @@ ci/run.sh cortex-m cortex-m4   # bare-metal tests and memory footprint
 ci/run.sh avr                  # AVR builds and simulator tests
 ```
 
+The fork's protected `main` still requires the original README status
+names. Those checks report the `readme-docs` result.
+
 ## How README.md is checked
 
 [readme-blocks.sh](readme-blocks.sh) identifies each block by the slug of
