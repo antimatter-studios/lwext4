@@ -165,6 +165,67 @@ jobs:
           ref: ${{ inputs.ref || github.ref }}
       - run: ci/run.sh ${{ matrix.job }}
 
+  debian-install:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - run: ci/run.sh debian-install
+
+  examples:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - run: ci/run.sh examples
+
+  # Use the results of the jobs documented in README.md. The docs step
+  # checks their configuration without running any of their suites.
+  readme-docs:
+    needs: [native, qemu-user, cortex-m, target, debian-install, examples]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Require successful suite jobs
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'skipped') || contains(needs.*.result, 'cancelled') }}
+        run: |
+          echo "::error::A required test or build job failed to complete successfully."
+          exit 1
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - run: ci/run.sh readme-docs
+
+  # Branch protection still requires the original README check names.
+  # Their work now runs in the jobs that readme-docs depends on.
+  readme-required-status:
+    name: ${{ matrix.check }}
+    needs: readme-docs
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        check:
+          - readme-api
+          - readme-arm-none-eabi
+          - readme-avr
+          - readme-cross-linux
+          - readme-debian
+          - readme-native
+          - readme-tools
+    steps:
+      - name: Report the README check result
+        env:
+          README_DOCS_RESULT: ${{ needs.readme-docs.result }}
+        run: test "$README_DOCS_RESULT" = success
+
   # The tests a branch adds must fail against its base and pass on it.
   red-green:
     runs-on: ubuntu-24.04

@@ -287,8 +287,9 @@ with only docker.
 |---|---|---|
 | Regression tests | the CTest suite in [tests/](tests); every fixed bug has a test, which must fail without the fix and pass with it | `native`, `red-green` |
 | Sanitizers | gcc and clang with ASan + UBSan, TSan | `native asan-ubsan` |
-| e2fsprogs as the oracle | what lwext4 writes must pass `e2fsck -fn` and read back with `debugfs`, and the reverse; every claim of this README is checked ([tests/acceptance](tests/acceptance/README.md)) | README acceptance |
-| Power loss | a power cut after every single block write of a workload, then journal replay and `e2fsck` | `readme-api` |
+| e2fsprogs as the oracle | what lwext4 writes must pass `e2fsck -fn` and read back with `debugfs`, and the reverse ([coverage inventory](tests/acceptance/README.md)) | `native gcc`, `qemu-user s390x` |
+| Power loss | a power cut after every single block write of a workload, then journal replay and `e2fsck` | `native gcc` |
+| README | the docs check depends on the jobs documented under [Run regression tests](#run-regression-tests) and checks that CI invokes those suites | `readme-docs` |
 | Linux architectures | x86_64, and under qemu-user aarch64, armhf, i686, mips, powerpc, ppc64le, riscv64, s390x (big endian); macOS; Windows under Wine | `qemu-user <arch>`, `mingw` |
 | Microcontrollers | [tests/baremetal](tests/baremetal) on Cortex-M0, M0+, M3, M4, M4F, M7 (QEMU), ARM7TDMI (qemu-arm), ATmega1284 (simavr), MSP430X (GDB simulator) | `cortex-m <cpu>`, `arm-sim`, `avr`, `msp430` |
 | Example firmware | the [examples](#examples) in Renode, QEMU and Espressif's QEMU | `cortex-m <cpu>`, own workflows |
@@ -326,6 +327,11 @@ pacman -S make gcc cmake
 * Linux (Debian):
 ```bash
 apt-get install make gcc cmake
+```
+
+For the [regression tests](#run-regression-tests), also install:
+```bash
+apt-get install e2fsprogs fdisk python3 pkgconf
 ```
 
 Compile & install tools
@@ -440,28 +446,24 @@ ctest --output-on-failure
 With AddressSanitizer/UBSan: configure with
 `-DLWEXT4_SANITIZE=address,undefined`.
 
-Other Linux architectures under qemu-user, with `toolchain/linux-cross.cmake`
-(`gcc-<triple>` and `qemu-user` packages):
-```bash
-cmake -S . -B build_s390x -DCMAKE_TOOLCHAIN_FILE=toolchain/linux-cross.cmake \
-      -DCROSS_TRIPLE=s390x-linux-gnu -DCROSS_EMULATOR=qemu-s390x
-cmake --build build_s390x
-ctest --test-dir build_s390x --output-on-failure
-ci/scripts/fs-roundtrip.sh build_s390x qemu-s390x -L /usr/s390x-linux-gnu
-```
-`fs-roundtrip.sh` formats images with mke2fs and lwext4-mkfs, exercises
-them with lwext4-generic and checks them with e2fsck.
+CI runs the host regression and client/server suites in `native / gcc`.
+The `qemu-user / s390x` job uses `toolchain/linux-cross.cmake` and runs
+CTest under QEMU on big-endian Linux. It also runs the filesystem feature
+and journal recovery tests. Both jobs run `fs-roundtrip.sh` to check
+that lwext4 and e2fsprogs can read and write each other's images.
 
 The microcontroller toolchains also build [tests/baremetal](tests/baremetal),
 a test firmware that `ctest` runs in an emulator (see [Build for a
 microcontroller](#build-for-a-microcontroller)).
 
-Every CI job, locally, with only docker ([ci/README.md](ci/README.md)):
+Run these [CI jobs](.github/workflows/ci.yml) locally with Docker:
 ```bash
-ci/run.sh --list
+ci/run.sh native gcc
 ci/run.sh qemu-user s390x
+ci/run.sh cortex-m cortex-m3
 ci/run.sh avr
 ```
+Use `ci/run.sh --list` to see the other container jobs. See [CI environments](ci/README.md).
 
 Using lwext4-mkfs tool
 =====
